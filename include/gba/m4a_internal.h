@@ -242,7 +242,7 @@ struct PokemonCrySong
     u8 part0; // 0x11
     u8 tuneValue; // 0x12
     u8 gotoCmd; // 0x13
-    u32 gotoTarget; // 0x14
+    GbaAddr gotoTarget; // Four-byte logical operand in the cry bytecode stream.
     u8 part1; // 0x18
     u8 tuneValue2; // 0x19
     u8 cont[2]; // 0x1A
@@ -351,15 +351,17 @@ struct MusicPlayerInfo
 
 struct MusicPlayer
 {
-    struct MusicPlayerInfo *info;
-    struct MusicPlayerTrack *track;
+    // The generated table is a GBA-shaped fixed-width table. Hydrate these
+    // logical addresses before using them as native pointers.
+    GbaAddr info;
+    GbaAddr track;
     u8 numTracks;
     u16 unk_A;
 };
 
 struct Song
 {
-    struct SongHeader *header;
+    GbaAddr header;
     u16 ms;
     u16 me;
 };

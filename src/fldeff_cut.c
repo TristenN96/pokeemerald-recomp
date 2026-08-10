@@ -284,9 +284,10 @@ static void FieldCallback_CutGrass(void)
 bool8 FldEff_UseCutOnGrass(void)
 {
     u8 taskId = CreateFieldMoveTask();
+    GbaAddr callbackAddr = HOST_FUNCTION_ADDR(StartCutGrassFieldEffect);
 
-    gTasks[taskId].data[8] = (u32)StartCutGrassFieldEffect >> 16;
-    gTasks[taskId].data[9] = (u32)StartCutGrassFieldEffect;
+    gTasks[taskId].data[8] = callbackAddr >> 16;
+    gTasks[taskId].data[9] = callbackAddr;
     IncrementGameStat(GAME_STAT_USED_CUT);
     return FALSE;
 }
@@ -300,9 +301,10 @@ static void FieldCallback_CutTree(void)
 bool8 FldEff_UseCutOnTree(void)
 {
     u8 taskId = CreateFieldMoveTask();
+    GbaAddr callbackAddr = HOST_FUNCTION_ADDR(StartCutTreeFieldEffect);
 
-    gTasks[taskId].data[8] = (u32)StartCutTreeFieldEffect >> 16;
-    gTasks[taskId].data[9] = (u32)StartCutTreeFieldEffect;
+    gTasks[taskId].data[8] = callbackAddr >> 16;
+    gTasks[taskId].data[9] = callbackAddr;
     IncrementGameStat(GAME_STAT_USED_CUT);
     return FALSE;
 }

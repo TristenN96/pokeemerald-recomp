@@ -21,11 +21,15 @@
 	.else
 	.byte 0
 	.endif
-	.int \sample_data_pointer
-	.byte \attack
-	.byte \decay
-	.byte \sustain
-	.byte \release
+	.if LINUX64
+		.space 4
+		.quad \sample_data_pointer
+		.byte \attack, \decay, \sustain, \release
+		.space 4
+	.else
+		.int \sample_data_pointer
+		.byte \attack, \decay, \sustain, \release
+	.endif
 	.endm
 
 	.macro voice_square_1 base_midi_key:req, pan:req, sweep:req, duty_cycle:req, attack:req, decay:req, sustain:req, release:req
@@ -36,7 +40,7 @@
 	_voice_square_1 9, \base_midi_key, \pan, \sweep, \duty_cycle, \attack, \decay, \sustain, \release
 	.endm
 
-	.macro _voice_square_1 type:req, base_midi_key:req, pan:req, sweep:req, duty_cycle:req, attack:req, decay:req, sustain:req, release:req
+.macro _voice_square_1 type:req, base_midi_key:req, pan:req, sweep:req, duty_cycle:req, attack:req, decay:req, sustain:req, release:req
 	.byte \type
 	.byte \base_midi_key
 	.if \pan != 0
@@ -45,12 +49,19 @@
 	.byte 0
 	.endif
 	.byte \sweep
-	.byte (\duty_cycle & 0x3)
-	.byte 0, 0, 0
-	.byte (\attack  & 0x7)
-	.byte (\decay   & 0x7)
-	.byte (\sustain & 0xF)
-	.byte (\release & 0x7)
+	.if LINUX64
+		.space 4
+		.quad 0
+		.byte (\attack  & 0x7), (\decay & 0x7), (\sustain & 0xF), (\release & 0x7)
+		.space 4
+	.else
+		.byte (\duty_cycle & 0x3)
+		.byte 0, 0, 0
+		.byte (\attack  & 0x7)
+		.byte (\decay   & 0x7)
+		.byte (\sustain & 0xF)
+		.byte (\release & 0x7)
+	.endif
 	.endm
 
 	.macro voice_square_2 base_midi_key:req, pan:req, duty_cycle:req, attack:req, decay:req, sustain:req, release:req
@@ -61,7 +72,7 @@
 	_voice_square_2 10, \base_midi_key, \pan, \duty_cycle, \attack, \decay, \sustain, \release
 	.endm
 
-	.macro _voice_square_2 type:req, base_midi_key:req, pan:req, duty_cycle:req, attack:req, decay:req, sustain:req, release:req
+.macro _voice_square_2 type:req, base_midi_key:req, pan:req, duty_cycle:req, attack:req, decay:req, sustain:req, release:req
 	.byte \type
 	.byte \base_midi_key
 	.if \pan != 0
@@ -70,12 +81,19 @@
 	.byte 0
 	.endif
 	.byte 0
-	.byte (\duty_cycle & 0x3)
-	.byte 0, 0, 0
-	.byte (\attack  & 0x7)
-	.byte (\decay   & 0x7)
-	.byte (\sustain & 0xF)
-	.byte (\release & 0x7)
+	.if LINUX64
+		.space 4
+		.quad 0
+		.byte (\attack  & 0x7), (\decay & 0x7), (\sustain & 0xF), (\release & 0x7)
+		.space 4
+	.else
+		.byte (\duty_cycle & 0x3)
+		.byte 0, 0, 0
+		.byte (\attack  & 0x7)
+		.byte (\decay   & 0x7)
+		.byte (\sustain & 0xF)
+		.byte (\release & 0x7)
+	.endif
 	.endm
 
 	.macro voice_programmable_wave base_midi_key:req, pan:req, wave_samples_pointer:req, attack:req, decay:req, sustain:req, release:req
@@ -95,11 +113,18 @@
 	.byte 0
 	.endif
 	.byte 0
-	.int \wave_samples_pointer
-	.byte (\attack  & 0x7)
-	.byte (\decay   & 0x7)
-	.byte (\sustain & 0xF)
-	.byte (\release & 0x7)
+	.if LINUX64
+		.space 4
+		.quad \wave_samples_pointer
+		.byte (\attack & 0x7), (\decay & 0x7), (\sustain & 0xF), (\release & 0x7)
+		.space 4
+	.else
+		.int \wave_samples_pointer
+		.byte (\attack  & 0x7)
+		.byte (\decay   & 0x7)
+		.byte (\sustain & 0xF)
+		.byte (\release & 0x7)
+	.endif
 	.endm
 
 	.macro voice_noise base_midi_key:req, pan:req, period:req, attack:req, decay:req, sustain:req, release:req
@@ -119,34 +144,67 @@
 	.byte 0
 	.endif
 	.byte 0
-	.byte (\period & 0x1)
-	.byte 0, 0, 0
-	.byte (\attack  & 0x7)
-	.byte (\decay   & 0x7)
-	.byte (\sustain & 0xF)
-	.byte (\release & 0x7)
+	.if LINUX64
+		.space 4
+		.quad 0
+		.byte (\attack & 0x7), (\decay & 0x7), (\sustain & 0xF), (\release & 0x7)
+		.space 4
+	.else
+		.byte (\period & 0x1)
+		.byte 0, 0, 0
+		.byte (\attack  & 0x7)
+		.byte (\decay   & 0x7)
+		.byte (\sustain & 0xF)
+		.byte (\release & 0x7)
+	.endif
 	.endm
 
 	.macro voice_keysplit voice_group_pointer:req, keysplit_table_pointer:req
 	.byte 0x40, 0, 0, 0
-	.int \voice_group_pointer
-	.int \keysplit_table_pointer
+	.if LINUX64
+		.space 4
+		.quad \voice_group_pointer
+		.quad \keysplit_table_pointer
+	.else
+		.int \voice_group_pointer
+		.int \keysplit_table_pointer
+	.endif
 	.endm
 
 	.macro voice_keysplit_all voice_group_pointer:req
 	.byte 0x80, 0, 0, 0
-	.int \voice_group_pointer
-	.int 0
+	.if LINUX64
+		.space 4
+		.quad \voice_group_pointer
+		.quad 0
+	.else
+		.int \voice_group_pointer
+		.int 0
+	.endif
 	.endm
 
 	.macro cry sample:req
 	.byte 0x20, 60, 0, 0
-	.int \sample
-	.byte 0xff, 0, 0xff, 0
+	.if LINUX64
+		.space 4
+		.quad \sample
+		.byte 0xff, 0, 0xff, 0
+		.space 4
+	.else
+		.int \sample
+		.byte 0xff, 0, 0xff, 0
+	.endif
 	.endm
 
 	.macro cry_reverse sample:req
 	.byte 0x30, 60, 0, 0
-	.int \sample
-	.byte 0xff, 0, 0xff, 0
+	.if LINUX64
+		.space 4
+		.quad \sample
+		.byte 0xff, 0, 0xff, 0
+		.space 4
+	.else
+		.int \sample
+		.byte 0xff, 0, 0xff, 0
+	.endif
 	.endm

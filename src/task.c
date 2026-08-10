@@ -3,6 +3,13 @@
 
 COMMON_DATA struct Task gTasks[NUM_TASKS] = {0};
 
+#if defined(LINUX64) && LINUX64
+// Follow-up callbacks are game-visible task data on the GBA, but are native
+// function pointers on the host. Keep the 16-bit task fields untouched and
+// retain the callback in a sidecar indexed by the stable task id.
+static TaskFunc sTaskFollowupFuncs[NUM_TASKS];
+#endif
+
 static void InsertTask(u8 newTaskId);
 static u8 FindFirstActiveTask(void);
 
@@ -12,6 +19,9 @@ void ResetTasks(void)
 
     for (i = 0; i < NUM_TASKS; i++)
     {
+#if defined(LINUX64) && LINUX64
+        sTaskFollowupFuncs[i] = NULL;
+#endif
         gTasks[i].isActive = FALSE;
         gTasks[i].func = TaskDummy;
         gTasks[i].prev = i;
@@ -138,18 +148,30 @@ void TaskDummy(u8 taskId)
 
 void SetTaskFuncWithFollowupFunc(u8 taskId, TaskFunc func, TaskFunc followupFunc)
 {
+#if !defined(LINUX64) || !LINUX64
     u8 followupFuncIndex = NUM_TASK_DATA - 2; // Should be const.
+#endif
 
+#if defined(LINUX64) && LINUX64
+    sTaskFollowupFuncs[taskId] = followupFunc;
+#else
     gTasks[taskId].data[followupFuncIndex] = (s16)((u32)followupFunc);
     gTasks[taskId].data[followupFuncIndex + 1] = (s16)((u32)followupFunc >> 16); // Store followupFunc as two half-words in the data array.
+#endif
     gTasks[taskId].func = func;
 }
 
 void SwitchTaskToFollowupFunc(u8 taskId)
 {
+#if !defined(LINUX64) || !LINUX64
     u8 followupFuncIndex = NUM_TASK_DATA - 2; // Should be const.
+#endif
 
+#if defined(LINUX64) && LINUX64
+    gTasks[taskId].func = sTaskFollowupFuncs[taskId];
+#else
     gTasks[taskId].func = (TaskFunc)((u16)(gTasks[taskId].data[followupFuncIndex]) | (gTasks[taskId].data[followupFuncIndex + 1] << 16));
+#endif
 }
 
 bool8 FuncIsActiveTask(TaskFunc func)

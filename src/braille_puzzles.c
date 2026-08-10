@@ -267,13 +267,15 @@ bool8 FldEff_UsePuzzleEffect(void)
 
     if (sIsRegisteelPuzzle == TRUE)
     {
-        gTasks[taskId].data[8] = (u32)UseRegisteelHm_Callback >> 16;
-        gTasks[taskId].data[9] = (u32)UseRegisteelHm_Callback;
+        GbaAddr callbackAddr = HOST_FUNCTION_ADDR(UseRegisteelHm_Callback);
+        gTasks[taskId].data[8] = callbackAddr >> 16;
+        gTasks[taskId].data[9] = callbackAddr;
     }
     else
     {
-        gTasks[taskId].data[8] = (u32)UseRegirockHm_Callback >> 16;
-        gTasks[taskId].data[9] = (u32)UseRegirockHm_Callback;
+        GbaAddr callbackAddr = HOST_FUNCTION_ADDR(UseRegirockHm_Callback);
+        gTasks[taskId].data[8] = callbackAddr >> 16;
+        gTasks[taskId].data[9] = callbackAddr;
     }
     return FALSE;
 }

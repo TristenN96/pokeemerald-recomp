@@ -582,13 +582,14 @@ static void Task_SendPacket_SwitchToReceive(u8 taskId)
 
 static void *LoadPtrFromTaskData(const u16 *asShort)
 {
-    return (void *)(asShort[0] | (asShort[1] << 16));
+    return HostResolveGbaAddr(asShort[0] | ((u32)asShort[1] << 16));
 }
 
 static void StorePtrInTaskData(void *records, u16 *asShort)
 {
-    asShort[0] = (u32)records;
-    asShort[1] = ((u32)records >> 16);
+    GbaAddr recordsAddr = HostPointerToGbaAddr(records);
+    asShort[0] = recordsAddr;
+    asShort[1] = recordsAddr >> 16;
 }
 
 static u8 GetMultiplayerId_(void)

@@ -1291,6 +1291,19 @@ static const u16 sRestrictedWordSpecies[] = {
 #define tFuncId       data[6]
 #define tPersonType   data[7]
 
+#if defined(LINUX64) && LINUX64
+static MainCallback sEasyChatExitCallbacks[NUM_TASKS];
+#endif
+
+static MainCallback GetEasyChatExitCallback(u8 taskId)
+{
+#if defined(LINUX64) && LINUX64
+    return sEasyChatExitCallbacks[taskId];
+#else
+    return (MainCallback)GetWordTaskArg(taskId, TASKIDX_EXIT_CALLBACK);
+#endif
+}
+
 void DoEasyChatScreen(u8 type, u16 *words, MainCallback exitCallback, u8 displayedPersonType)
 {
     u8 taskId;
@@ -1299,8 +1312,12 @@ void DoEasyChatScreen(u8 type, u16 *words, MainCallback exitCallback, u8 display
     taskId = CreateTask(Task_InitEasyChatScreen, 0);
     gTasks[taskId].tType = type;
     gTasks[taskId].tPersonType = displayedPersonType;
-    SetWordTaskArg(taskId, TASKIDX_WORDS, (u32)words);
+    SetWordTaskArg(taskId, TASKIDX_WORDS, HostPointerToGbaAddr(words));
+#if defined(LINUX64) && LINUX64
+    sEasyChatExitCallbacks[taskId] = exitCallback;
+#else
     SetWordTaskArg(taskId, TASKIDX_EXIT_CALLBACK, (u32)exitCallback);
+#endif
     SetMainCallback2(CB2_EasyChatScreen);
 }
 
@@ -1386,7 +1403,7 @@ static void Task_EasyChatScreen(u8 taskId)
         break;
     case MAINSTATE_EXIT:
         if (!gPaletteFade.active)
-            ExitEasyChatScreen((MainCallback)GetWordTaskArg(taskId, TASKIDX_EXIT_CALLBACK));
+            ExitEasyChatScreen(GetEasyChatExitCallback(taskId));
         break;
     case MAINSTATE_WAIT_FADE_IN:
         if (!gPaletteFade.active)
@@ -1414,21 +1431,21 @@ static bool8 InitEasyChatScreen(u8 taskId)
         if (!InitEasyChatScreenWordData())
         {
             // Alloc failed, exit
-            ExitEasyChatScreen((MainCallback)GetWordTaskArg(taskId, TASKIDX_EXIT_CALLBACK));
+            ExitEasyChatScreen(GetEasyChatExitCallback(taskId));
         }
         break;
     case 2:
-        if (!InitEasyChatScreenStruct(tType, (u16 *)GetWordTaskArg(taskId, TASKIDX_WORDS), tPersonType))
+        if (!InitEasyChatScreenStruct(tType, HostResolveGbaAddr(GetWordTaskArg(taskId, TASKIDX_WORDS)), tPersonType))
         {
             // Alloc failed, exit
-            ExitEasyChatScreen((MainCallback)GetWordTaskArg(taskId, TASKIDX_EXIT_CALLBACK));
+            ExitEasyChatScreen(GetEasyChatExitCallback(taskId));
         }
         break;
     case 3:
         if (!InitEasyChatScreenControl())
         {
             // Alloc failed, exit
-            ExitEasyChatScreen((MainCallback)GetWordTaskArg(taskId, TASKIDX_EXIT_CALLBACK));
+            ExitEasyChatScreen(GetEasyChatExitCallback(taskId));
         }
         break;
     case 4:

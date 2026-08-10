@@ -592,9 +592,10 @@ static void FieldCallback_SecretBaseCave(void)
 bool8 FldEff_UseSecretPowerCave(void)
 {
     u8 taskId = CreateFieldMoveTask();
+    GbaAddr callbackAddr = HOST_FUNCTION_ADDR(StartSecretBaseCaveFieldEffect);
 
-    gTasks[taskId].data[8] = (u32)StartSecretBaseCaveFieldEffect >> 16;
-    gTasks[taskId].data[9] = (u32)StartSecretBaseCaveFieldEffect;
+    gTasks[taskId].data[8] = callbackAddr >> 16;
+    gTasks[taskId].data[9] = callbackAddr;
 
     return FALSE;
 }
@@ -652,9 +653,10 @@ static void FieldCallback_SecretBaseTree(void)
 bool8 FldEff_UseSecretPowerTree(void)
 {
     u8 taskId = CreateFieldMoveTask();
+    GbaAddr callbackAddr = HOST_FUNCTION_ADDR(StartSecretBaseTreeFieldEffect);
 
-    gTasks[taskId].data[8] = (u32)StartSecretBaseTreeFieldEffect >> 16;
-    gTasks[taskId].data[9] = (u32)StartSecretBaseTreeFieldEffect;
+    gTasks[taskId].data[8] = callbackAddr >> 16;
+    gTasks[taskId].data[9] = callbackAddr;
 
     return FALSE;
 }
@@ -726,9 +728,10 @@ static void FieldCallback_SecretBaseShrub(void)
 bool8 FldEff_UseSecretPowerShrub(void)
 {
     u8 taskId = CreateFieldMoveTask();
+    GbaAddr callbackAddr = HOST_FUNCTION_ADDR(StartSecretBaseShrubFieldEffect);
 
-    gTasks[taskId].data[8] = (u32)StartSecretBaseShrubFieldEffect >> 16;
-    gTasks[taskId].data[9] = (u32)StartSecretBaseShrubFieldEffect;
+    gTasks[taskId].data[8] = callbackAddr >> 16;
+    gTasks[taskId].data[9] = callbackAddr;
 
     return FALSE;
 }

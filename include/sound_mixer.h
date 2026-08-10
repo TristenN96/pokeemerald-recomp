@@ -105,8 +105,10 @@ struct SoundMixerState {
     void *reserved1; // In poke* this is called "ExtVolPit"
     void *reserved2;
     void *reserved3;
+#if !defined(LINUX64) || !LINUX64
     void *reversed4;
     void *reserved5;
+#endif
     struct MixerSource chans[MAX_SAMPLE_CHANNELS];
     __attribute__((aligned(4))) float outBuffer[MIXED_AUDIO_BUFFER_SIZE * 2];
     //s8 outBuffer[MIXED_AUDIO_BUFFER_SIZE * 2];

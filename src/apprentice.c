@@ -79,6 +79,10 @@ COMMON_DATA struct ApprenticePartyMovesData *gApprenticePartyMovesData = NULL;
 COMMON_DATA struct ApprenticeQuestionData *gApprenticeQuestionData = NULL;
 COMMON_DATA void (*gApprenticeFunc)(void) = NULL;
 
+#if defined(LINUX64) && LINUX64
+static void (*sApprenticeTaskFuncs[NUM_TASKS])(void);
+#endif
+
 // This file's functions.
 static u16 GetRandomAlternateMove(u8 monId);
 static bool8 TrySetMove(u8 monId, u16 move);
@@ -1291,12 +1295,17 @@ static void Task_ExecuteFuncAfterButtonPress(u8 taskId)
 {
     if (JOY_NEW(A_BUTTON) || JOY_NEW(B_BUTTON))
     {
-#ifndef PORTABLE
+#if defined(LINUX64) && LINUX64
+        gApprenticeFunc = sApprenticeTaskFuncs[taskId];
+#elif !defined(PORTABLE)
         gApprenticeFunc = (void *)(u32)(((u16)gTasks[taskId].data[0] | (gTasks[taskId].data[1] << 16)));
 #else
         gApprenticeFunc = (void *)(u32)(((u16)gTasks[taskId].data[0] | ((u16)gTasks[taskId].data[1] << 16)));
 #endif
         gApprenticeFunc();
+#if defined(LINUX64) && LINUX64
+        sApprenticeTaskFuncs[taskId] = NULL;
+#endif
         DestroyTask(taskId);
     }
 }
@@ -1304,8 +1313,12 @@ static void Task_ExecuteFuncAfterButtonPress(u8 taskId)
 static void ExecuteFuncAfterButtonPress(void (*func)(void))
 {
     u8 taskId = CreateTask(Task_ExecuteFuncAfterButtonPress, 1);
+#if defined(LINUX64) && LINUX64
+    sApprenticeTaskFuncs[taskId] = func;
+#else
     gTasks[taskId].data[0] = (u32)(func);
     gTasks[taskId].data[1] = (u32)(func) >> 16;
+#endif
 }
 
 static void UNUSED ExecuteFollowupFuncAfterButtonPress(TaskFunc task)

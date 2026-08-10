@@ -1627,9 +1627,9 @@ void LoadBattlePyramidFloorObjectEventScripts(void)
     for (i = 0; i < OBJECT_EVENT_TEMPLATES_COUNT; i++)
     {
         if (events[i].graphicsId != OBJ_EVENT_GFX_ITEM_BALL)
-            events[i].script = BattlePyramid_TrainerBattle;
+            ObjectEventTemplate_SetScript(&events[i], BattlePyramid_TrainerBattle);
         else
-            events[i].script = BattlePyramid_FindItemBall;
+            ObjectEventTemplate_SetScript(&events[i], BattlePyramid_FindItemBall);
     }
 }
 

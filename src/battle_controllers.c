@@ -1323,12 +1323,13 @@ void BtlController_EmitDataTransfer(u8 bufferId, u16 size, void *data)
 static void UNUSED BtlController_EmitDMA3Transfer(u8 bufferId, void *dst, u16 size, void *data)
 {
     s32 i;
+    GbaAddr dstAddr = HostPointerToGbaAddr(dst);
 
     sBattleBuffersTransferData[0] = CONTROLLER_DMA3TRANSFER;
-    sBattleBuffersTransferData[1] = (u32)(dst);
-    sBattleBuffersTransferData[2] = ((u32)(dst) & 0x0000FF00) >> 8;
-    sBattleBuffersTransferData[3] = ((u32)(dst) & 0x00FF0000) >> 16;
-    sBattleBuffersTransferData[4] = ((u32)(dst) & 0xFF000000) >> 24;
+    sBattleBuffersTransferData[1] = dstAddr;
+    sBattleBuffersTransferData[2] = (dstAddr & 0x0000FF00) >> 8;
+    sBattleBuffersTransferData[3] = (dstAddr & 0x00FF0000) >> 16;
+    sBattleBuffersTransferData[4] = (dstAddr & 0xFF000000) >> 24;
     sBattleBuffersTransferData[5] = size;
     sBattleBuffersTransferData[6] = (size & 0xFF00) >> 8;
     for (i = 0; i < size; i++)
