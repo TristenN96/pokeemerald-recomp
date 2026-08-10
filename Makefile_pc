@@ -1,4 +1,5 @@
-NATIVE_LINUX ?= 0
+NATIVE_LINUX ?= $(if $(filter linux linux64,$(MAKECMDGOALS)),1,0)
+LINUX64 ?= 0
 
 ifeq ($(NATIVE_LINUX),1)
 PREFIX :=
@@ -12,7 +13,7 @@ WINDRES := $(PREFIX)windres
 
 SDL_DIR := /usr/i686-w64-mingw32
 ASM_PSEUDO_OP_CONV := sed -e 's/\.4byte/\.int/g;s/\.2byte/\.short/g'
-#FIX_UNDERSCORE is required for 32 bit windows
+# FIX_UNDERSCORE is required for 32 bit Windows.
 ifeq ($(NATIVE_LINUX),1)
 FIX_UNDERSCORE := true
 else
@@ -62,16 +63,35 @@ DATA_ASM_BUILDDIR = $(OBJ_DIR)/$(DATA_ASM_SUBDIR)
 SONG_BUILDDIR = $(OBJ_DIR)/$(SONG_SUBDIR)
 MID_BUILDDIR = $(OBJ_DIR)/$(MID_SUBDIR)
 
-ASFLAGS := --32 --defsym MODERN=$(MODERN) --defsym PORTABLE=1 --defsym UBFIX=1
+ifeq ($(NATIVE_LINUX),1)
+ifeq ($(LINUX64),1)
+HOST_ASFLAGS := --64
+HOST_WIDTH_CFLAGS :=
+else
+HOST_ASFLAGS := --32
+HOST_WIDTH_CFLAGS := -m32
+endif
+else
+HOST_ASFLAGS := --32
+HOST_WIDTH_CFLAGS := -m32
+endif
 
-GCC_VER := $(shell $(CC) -dumpversion)
+ASFLAGS := $(HOST_ASFLAGS) --defsym MODERN=$(MODERN) --defsym PORTABLE=1 --defsym UBFIX=1 --defsym LINUX64=$(LINUX64)
 
-CC1 	:= $(shell $(PREFIX)gcc --print-prog-name=cc1) -quiet
-override CFLAGS += -Wno-trigraphs -Wimplicit -Wparentheses -Wunused -m32 -std=gnu99 -fno-dce -fno-builtin -Wno-unused-function -DPORTABLE -DNONMATCHING -D UBFIX -DMODERN=$(MODERN)
+ifeq ($(NATIVE_LINUX),1)
+CC1 := $(CC)
+else
+CC1 := $(shell $(PREFIX)gcc --print-prog-name=cc1) -quiet
+endif
+override CFLAGS += -Wno-trigraphs -Wimplicit -Wparentheses -Wunused $(HOST_WIDTH_CFLAGS) -std=gnu99 -fno-dce -fno-builtin -Wno-unused-function -Wpointer-to-int-cast -Wint-to-pointer-cast -DPORTABLE -DNONMATCHING -D UBFIX -DMODERN=$(MODERN)
 ifeq ($(NATIVE_LINUX),1)
 override CFLAGS += -fno-pie
 ROM := pokeemerald
 OBJ_DIR := build/linux
+ifeq ($(LINUX64),1)
+ROM := pokeemerald-linux64
+OBJ_DIR := build/linux64
+endif
 else
 override CFLAGS += -fleading-underscore
 ROM := pokeemerald.exe
@@ -80,7 +100,7 @@ endif
 
 CPPFLAGS := -std=gnu99 -iquote include -iquote $(GFLIB_SUBDIR) -Wno-trigraphs -D NONMATCHING -D PORTABLE -D $(TARGET_PLATFORM) -D $(TILE_RENDERER) -D MODERN=$(MODERN) -D UBFIX
 ifeq ($(NATIVE_LINUX),1)
-CPPFLAGS += -m32 -D NATIVE_LINUX $(shell pkg-config --cflags sdl2 SDL2_image)
+CPPFLAGS += $(HOST_WIDTH_CFLAGS) -D NATIVE_LINUX -D LINUX64=$(LINUX64) $(shell pkg-config --cflags sdl2 SDL2_image)
 else
 CPPFLAGS += -I$(SDL_DIR)/include -L$(SDL_DIR)/lib
 endif
@@ -138,10 +158,13 @@ MAKEFLAGS += --no-print-directory
 # Secondary expansion is required for dependency variables in object rules.
 .SECONDEXPANSION:
 
-.PHONY: all rom linux clean compare tidy mostlyclean libagbsyscall modern tidymodern tidynonmodern
+.PHONY: all rom linux linux64 clean compare tidy mostlyclean libagbsyscall modern tidymodern tidynonmodern
 
 linux:
 	$(MAKE) -f Makefile_pc NATIVE_LINUX=1 rom
+
+linux64:
+	$(MAKE) -f Makefile_pc NATIVE_LINUX=1 LINUX64=1 rom
 
 infoshell = $(foreach line, $(shell $1 | sed "s/ /__SPACE__/g"), $(info $(subst __SPACE__, ,$(line))))
 
