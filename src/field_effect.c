@@ -243,7 +243,7 @@ static u8 sActiveList[32];
 extern struct CompressedSpritePalette gMonPaletteTable[]; // GF made a mistake and did not extern it as const.
 extern const struct CompressedSpritePalette gTrainerFrontPicPaletteTable[];
 extern const struct CompressedSpriteSheet gTrainerFrontPicTable[];
-extern u8 *gFieldEffectScriptPointers[];
+extern const GbaAddr gFieldEffectScriptPointers[];
 extern const struct SpriteTemplate *const gFieldEffectObjectTemplatePointers[];
 
 static const u32 sNewGameBirch_Gfx[] = INCBIN_U32("graphics/birch_speech/birch.4bpp");
@@ -700,7 +700,7 @@ u32 FieldEffectStart(u8 id)
 
     FieldEffectActiveListAdd(id);
 
-    script = gFieldEffectScriptPointers[id];
+    script = HostResolveGbaAddr(gFieldEffectScriptPointers[id]);
 
     while (gFieldEffectScriptFuncs[*script](&script, &val))
         ;
