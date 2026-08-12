@@ -1,10 +1,12 @@
 #ifdef PLATFORM_SDL2
-#include <assert.h>
 #include <stdbool.h>
 #include <stdio.h>
-#include <time.h>
+#include <stdlib.h>
+#include <string.h>
 
 #ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
 #include <windows.h>
 #include <xinput.h>
 #endif
@@ -15,7 +17,7 @@
 #else
 #include <SDL2/SDL.h>
 #endif
-#ifdef NATIVE_LINUX
+#if defined(NATIVE_LINUX) || defined(_WIN32)
 #include <SDL2/SDL_image.h>
 #endif
 
@@ -28,62 +30,30 @@
 #include "gba/flash_internal.h"
 #include "platform/dma.h"
 #include "platform/framedraw.h"
-#include "platform/desktop_profiles.h"
+#include "platform/desktop_config.h"
+#include "platform/desktop_clock.h"
+#include "platform/desktop_audio.h"
+#include "platform/desktop_input.h"
 #include "platform/desktop_scheduler.h"
+#include "platform/desktop_video.h"
+#include "platform/desktop_storage.h"
+#include "platform/desktop_profiles.h"
+#include "platform/desktop_frontend.h"
+#include "platform/desktop_game_content.h"
+#include "platform/desktop_state.h"
+#include "platform/desktop_state_ui.h"
 #include "platform/native_state.h"
 
-extern void (*const gIntrTable[])(void);
+HOST_DATA bool speedUp = false;
+HOST_DATA bool isRunning = true;
+HOST_DATA bool paused = false;
+HOST_DATA double simTime = 0;
+HOST_DATA double lastGameTime = 0;
+HOST_DATA double curGameTime = 0;
+HOST_DATA double fixedTimestep = 1.0 / 60.0; // 16.666667ms
+HOST_DATA double timeScale = 1.0;
 
-SDL_Thread *mainLoopThread;
-SDL_Window *sdlWindow;
-SDL_Renderer *sdlRenderer;
-SDL_Texture *sdlTexture;
-#if defined(NATIVE_LINUX) || defined(_WIN32)
-#define MAX_BORDER_BACKGROUNDS 15
-SDL_Texture *sdlBackgroundTextures[MAX_BORDER_BACKGROUNDS];
-SDL_Texture *sdlBorderTexture;
-#endif
-static u8 sBorderBackgroundCount = 1;
-SDL_AudioDeviceID sdlAudioDevice;
-SDL_sem *vBlankSemaphore;
-SDL_atomic_t isFrameAvailable;
-bool speedUp = false;
-unsigned int videoScale = 1;
-bool isRunning = true;
-bool paused = false;
-double simTime = 0;
-double lastGameTime = 0;
-double curGameTime = 0;
-double fixedTimestep = 1.0 / 60.0; // 16.666667ms
-double timeScale = 1.0;
-struct SiiRtcInfo internalClock;
-
-static FILE *sSaveFile = NULL;
-static char sSavePath[1024] = "pokeemerald.sav";
-static char sConfigPath[1024] = "pokeemerald.cfg";
-static u8 sBorderBackground;
-static bool sHasBorderBackgroundConfig;
-static u8 sBackgroundOrderVersion;
-static u8 sPlatformSettings[PLATFORM_SETTING_COUNT] = {0, 4, 0, 1, 1, 10};
-#ifdef __ANDROID__
-static SDL_GameController *androidController;
-#endif
-
-extern void AgbMain(void);
 extern void DoSoftReset(void);
-
-int DoMain(void *param);
-void ProcessEvents(void);
-void VDraw(SDL_Texture *texture);
-
-static void ReadSaveFile(const char *path);
-static void ReadConfigFile(void);
-static void StoreConfigFile(void);
-static void ApplyPlatformSettings(void);
-static void StoreSaveFile(void);
-static void CloseSaveFile(void);
-
-static void UpdateInternalClock(void);
 
 enum NativeStateRequest
 {
@@ -92,57 +62,306 @@ enum NativeStateRequest
     NATIVE_STATE_REQUEST_LOAD,
 };
 
-static enum NativeStateRequest sNativeStateRequest;
+static void PrepareHostFrame(enum NativeStateRequest request, u8 slot,
+                             double *accumulator, u64 *lastPresentationCounter)
+{
+    enum NativeStateResult result;
+    const char *reason;
+    char status[256];
+
+    if (request == NATIVE_STATE_REQUEST_LOAD)
+    {
+        result = Platform_StateLoad(slot) == PLATFORM_STATE_OPERATION_OK
+            ? NATIVE_STATE_OK : NATIVE_STATE_UNAVAILABLE;
+        if (result == NATIVE_STATE_OK)
+        {
+            char path[1024];
+            Platform_VideoSetStatus("State loaded");
+            DBGPRINTF("Native state loaded (slot %u)\n", slot);
+            if (!Platform_ProfileGetStatePath(slot, path, sizeof(path)))
+                snprintf(path, sizeof(path), "<unknown>");
+            fprintf(stderr, "Native state loaded (slot %u): %s\n", slot, path);
+            fflush(stderr);
+            *accumulator = 0.0;
+            *lastPresentationCounter = 0;
+            return;
+        }
+        reason = Platform_StateGetLastError();
+        if (reason == NULL || reason[0] == '\0')
+            reason = "unknown serializer error";
+        snprintf(status, sizeof(status), "State load failed: %s", reason);
+        Platform_VideoSetStatus(status);
+        fprintf(stderr, "Native state load failed (slot %u): %s\n", slot, reason);
+        fflush(stderr);
+        DBGPRINTF("Native state load failed (slot %u): %s\n", slot, reason);
+    }
+
+    Platform_VideoDrawFrame();
+    if (request == NATIVE_STATE_REQUEST_SAVE)
+    {
+        {
+            enum PlatformStateOperationResult operationResult = Platform_StateSave(slot);
+            result = operationResult == PLATFORM_STATE_OPERATION_FAILED
+                ? NATIVE_STATE_UNAVAILABLE : NATIVE_STATE_OK;
+        }
+        if (result == NATIVE_STATE_OK)
+        {
+            char path[1024];
+            reason = Platform_StateGetLastError();
+            Platform_VideoSetStatus(reason != NULL && reason[0] != '\0'
+                                  ? reason : "State saved");
+            DBGPRINTF("Native state saved (slot %u)\n", slot);
+            if (!Platform_ProfileGetStatePath(slot, path, sizeof(path)))
+                snprintf(path, sizeof(path), "<unknown>");
+            fprintf(stderr, "Native state saved (slot %u): %s\n", slot, path);
+            fflush(stderr);
+        }
+        else
+        {
+            reason = Platform_StateGetLastError();
+            if (reason == NULL || reason[0] == '\0')
+                reason = "unknown serializer error";
+            snprintf(status, sizeof(status), "State save failed: %s", reason);
+            Platform_VideoSetStatus(status);
+            fprintf(stderr, "Native state save failed (slot %u): %s\n", slot, reason);
+            fflush(stderr);
+            DBGPRINTF("Native state save failed (slot %u): %s\n", slot, reason);
+        }
+    }
+}
+
+static enum PlatformStateUiResult RunStateUi(bool32 manager,
+                                              double *accumulator,
+                                              u64 *lastPresentationCounter)
+{
+    bool32 wasPaused = paused;
+    enum PlatformStateUiResult result;
+
+    if (!Platform_SchedulerWaitForFrame(1000))
+    {
+        Platform_VideoSetStatus("Unable to pause game for save-state menu");
+        return PLATFORM_STATE_UI_CLOSED;
+    }
+    /* The worker is blocked at VBlank here. Draw and retain that exact logical
+     * frame before the host UI replaces the renderer output. */
+    Platform_VideoDrawFrame();
+    paused = TRUE;
+    Platform_AudioSetPaused(TRUE);
+    result = manager ? Platform_StateUiRunManager() : Platform_StateUiRunSavePicker();
+    Platform_VideoRenderFramebuffer();
+    paused = wasPaused;
+    if (!paused)
+    {
+        Platform_AudioClearQueue();
+        Platform_AudioSetPaused(FALSE);
+    }
+    else
+        Platform_AudioSetPaused(TRUE);
+    *accumulator = 0.0;
+    *lastPresentationCounter = 0;
+    return result;
+}
+
+static bool32 EnvironmentEnabled(const char *name)
+{
+    const char *value = getenv(name);
+    return value != NULL && value[0] != '\0' && strcmp(value, "0") != 0;
+}
+
+static u32 EnvironmentUnsigned(const char *name, u32 fallback)
+{
+    const char *value = getenv(name);
+    char *end;
+    unsigned long parsed;
+    if (value == NULL || value[0] == '\0')
+        return fallback;
+    parsed = strtoul(value, &end, 10);
+    if (*end != '\0' || parsed > UINT32_MAX)
+        return fallback;
+    return (u32)parsed;
+}
+
+static void PacePresentation(u64 *deadline)
+{
+    u64 frequency = SDL_GetPerformanceFrequency();
+    u64 interval;
+    u64 now;
+    if (frequency == 0)
+        return;
+    interval = frequency / 60;
+    now = SDL_GetPerformanceCounter();
+    if (*deadline == 0 || now > *deadline + interval * 4)
+        *deadline = now;
+    *deadline += interval;
+    while ((now = SDL_GetPerformanceCounter()) < *deadline)
+    {
+        u64 remaining = *deadline - now;
+        u32 delay = (u32)(remaining * 1000 / frequency);
+        SDL_Delay(delay > 1 ? delay - 1 : 0);
+    }
+}
 
 #ifdef __ANDROID__
-static void HandleTouchEvent(const SDL_TouchFingerEvent *event);
+void Platform_HandleTouchEvent(const SDL_TouchFingerEvent *event);
 static void DrawTouchControls(void);
 #endif
 
 int main(int argc, char **argv)
 {
-    // Open an output console on Windows
-#ifdef _WIN32
-    AllocConsole() ;
-    AttachConsole( GetCurrentProcessId() ) ;
-    freopen( "CON", "w", stdout ) ;
+    const char *importRomPath = NULL;
+    const char *dataRootOverride = NULL;
+    bool32 verifyGameData = FALSE;
+    bool32 printDataPath = FALSE;
+    bool32 utilityMode;
+    char *prefPath = NULL;
+    int argIndex;
+#if defined(_WIN32) && defined(WINDOWS_DEBUG_CONSOLE)
+    AllocConsole();
+    freopen("CONOUT$", "w", stdout);
+    freopen("CONOUT$", "w", stderr);
 #endif
+
+    for (argIndex = 1; argIndex < argc; argIndex++)
+    {
+        if (strcmp(argv[argIndex], "--import-rom") == 0 && argIndex + 1 < argc)
+            importRomPath = argv[++argIndex];
+        else if (strcmp(argv[argIndex], "--data-root") == 0 && argIndex + 1 < argc)
+            dataRootOverride = argv[++argIndex];
+        else if (strcmp(argv[argIndex], "--verify-game-data") == 0)
+            verifyGameData = TRUE;
+        else if (strcmp(argv[argIndex], "--print-data-path") == 0)
+            printDataPath = TRUE;
+        else
+        {
+            fprintf(stderr, "Usage: %s [--data-root PATH] [--import-rom FILE] "
+                            "[--verify-game-data] [--print-data-path]\n", argv[0]);
+            return 2;
+        }
+    }
+    if (dataRootOverride == NULL || dataRootOverride[0] == '\0')
+        dataRootOverride = getenv("POKEEMERALD_DATA_ROOT");
+    utilityMode = importRomPath != NULL || verifyGameData || printDataPath;
 
 #ifdef __ANDROID__
     SDL_setenv("SDL_AUDIODRIVER", "openslES", 1);
     SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "0");
     SDL_SetHint(SDL_HINT_MOUSE_TOUCH_EVENTS, "0");
 #endif
-    if(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO
-#ifdef __ANDROID__
-                | SDL_INIT_GAMECONTROLLER
-#endif
-                ) < 0)
+    if(SDL_Init(utilityMode ? 0 : (SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMECONTROLLER)) < 0)
     {
         DBGPRINTF("SDL could not initialize! SDL_Error: %s\n", SDL_GetError());
         return 1;
     }
 
-#ifdef __ANDROID__
-    for (int i = 0; i < SDL_NumJoysticks() && androidController == NULL; i++)
-    {
-        if (SDL_IsGameController(i))
-            androidController = SDL_GameControllerOpen(i);
-    }
-#endif
+    if (!utilityMode)
+        Platform_InputInit();
 
-#ifdef __ANDROID__
-    char *prefPath = SDL_GetPrefPath("pokeemerald", "pokeemerald");
+    if (dataRootOverride == NULL || dataRootOverride[0] == '\0')
+    {
+#ifdef _WIN32
+        prefPath = SDL_GetPrefPath(NULL, "PokemonEmeraldRecomp");
+#else
+        prefPath = SDL_GetPrefPath("pokeemerald", "pokeemerald");
+#endif
+    }
+    Platform_StorageInit(dataRootOverride != NULL && dataRootOverride[0] != '\0'
+                       ? dataRootOverride : prefPath);
+    if (!utilityMode)
+    {
+        Platform_ConfigLoad();
+        Platform_ClockInit();
+    }
     if (prefPath != NULL)
-    {
-        SDL_snprintf(sSavePath, sizeof(sSavePath), "%spokeemerald.sav", prefPath);
-        SDL_snprintf(sConfigPath, sizeof(sConfigPath), "%spokeemerald.cfg", prefPath);
         SDL_free(prefPath);
-    }
-#endif
-    ReadSaveFile(sSavePath);
-    ReadConfigFile();
 
+    if (printDataPath)
+    {
+        Platform_GameContentVerifyInstalled(FALSE);
+        printf("%s\n", Platform_GameContentGetInstallPath());
+        if (importRomPath == NULL && !verifyGameData)
+        {
+            Platform_StorageShutdown();
+            SDL_Quit();
+            return 0;
+        }
+    }
+    if (importRomPath != NULL)
+    {
+        struct PlatformGameContentImportInfo info;
+        enum PlatformGameContentImportResult result = Platform_GameContentImport(importRomPath, &info);
+        if (result == PLATFORM_GAME_CONTENT_IMPORT_UNSUPPORTED_ROM)
+        {
+            fprintf(stderr,
+                    "Unsupported Pokemon Emerald ROM\n\n"
+                    "The selected ROM does not match the supported\n"
+                    "Pokemon Emerald revision.\n\n"
+                    "Detected SHA-1:\n%s\n\nExpected:\n%s\n",
+                    info.detectedSha1, Platform_GameContentGetExpectedSha1());
+        }
+        else if (result != PLATFORM_GAME_CONTENT_IMPORT_OK)
+            fprintf(stderr, "ROM import failed: %s\n", info.error);
+        else
+        {
+            printf("Installed Pokemon Emerald content at %s\n",
+                   Platform_GameContentGetInstallPath());
+            printf("Source SHA-1: %s\n", info.detectedSha1);
+            printf("Package SHA-1: %s\n", Platform_GameContentGetInstalledPackageSha1());
+        }
+        Platform_StorageShutdown();
+        SDL_Quit();
+        return result == PLATFORM_GAME_CONTENT_IMPORT_OK ? 0 : 2;
+    }
+    if (verifyGameData)
+    {
+        bool32 valid = Platform_GameContentVerifyInstalled(TRUE);
+        if (valid)
+            printf("Pokemon Emerald content verified: %s\n",
+                   Platform_GameContentGetInstalledPackageSha1());
+        else
+            fprintf(stderr, "Pokemon Emerald content invalid: %s\n",
+                    Platform_GameContentGetLastError());
+        Platform_StorageShutdown();
+        SDL_Quit();
+        return valid ? 0 : 2;
+    }
+
+    if (!Platform_VideoInit())
+        return 1;
+
+    if (!Platform_GameContentVerifyInstalled(TRUE)
+     && !Platform_FrontendRunGameDataSetup())
+    {
+        Platform_VideoShutdown();
+        Platform_InputShutdown();
+        Platform_StorageShutdown();
+        SDL_Quit();
+        return 0;
+    }
+
+    if (!Platform_ProfileInit())
+        return 1;
+
+    if (!Platform_FrontendRunStartup())
+    {
+        Platform_VideoShutdown();
+        Platform_InputShutdown();
+        Platform_StorageShutdown();
+        SDL_Quit();
+        return 0;
+    }
+    Platform_ProfileLoadSelectedSave(FLASH_BASE, sizeof(FLASH_BASE));
+    {
+        const struct PlatformProfileMetadata *profile = Platform_ProfileGetSelected();
+        fprintf(stderr,
+                "Platform startup: profile=%s save=%s profile_storage=%s legacy_fallback=%s\n",
+                profile != NULL ? profile->id : "<none>",
+                Platform_StorageGetActiveSavePath(),
+                Platform_StorageActiveSaveIsProfile() ? "yes" : "no",
+                Platform_StorageActiveSaveIsProfile() ? "disabled" : "enabled");
+        fflush(stderr);
+    }
+
+#if 0
 #ifdef __ANDROID__
     SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
 #endif
@@ -186,17 +405,19 @@ int main(int argc, char **argv)
         SDL_RWclose(backgroundFile);
         sBorderBackgroundCount++;
     }
-    if (sBackgroundOrderVersion < 2)
+    if (Platform_ConfigGetBackgroundOrderVersion() < 2)
     {
-        if (sHasBorderBackgroundConfig)
+        if (Platform_ConfigHasBorderBackground())
         {
-            if (sBorderBackground == 1)
-                sBorderBackground = sBorderBackgroundCount;
-            else if (sBorderBackground >= 2)
-                sBorderBackground--;
+            u8 selection = Platform_ConfigGetBorderBackground();
+            if (selection == 1)
+                selection = sBorderBackgroundCount;
+            else if (selection >= 2)
+                selection--;
+            Platform_ConfigSetBorderBackground(selection);
         }
-        sBackgroundOrderVersion = 2;
-        StoreConfigFile();
+        Platform_ConfigSetBackgroundOrderVersion(2);
+        Platform_ConfigStore();
     }
 #ifdef NATIVE_LINUX
     SDL_RenderSetLogicalSize(sdlRenderer, 0, 0);
@@ -258,344 +479,227 @@ int main(int argc, char **argv)
         return 1;
     }
     SDL_SetTextureBlendMode(sdlTexture, SDL_BLENDMODE_NONE);
+#endif
 
     simTime = curGameTime = lastGameTime = SDL_GetPerformanceCounter();
 
-    isFrameAvailable.value = 0;
-    vBlankSemaphore = SDL_CreateSemaphore(0);
-
-    SDL_AudioSpec want;
-
-    SDL_memset(&want, 0, sizeof(want)); /* or SDL_zero(want) */
-    want.freq = 42060;
-    want.format = AUDIO_F32;
-    want.channels = 2;
-    want.samples = 1024;
-    cgb_audio_init(want.freq);
-
-
-    sdlAudioDevice = SDL_OpenAudioDevice(NULL, 0, &want, NULL, 0);
-    if (sdlAudioDevice == 0)
-        SDL_Log("Failed to open audio: %s", SDL_GetError());
-    else
-    {
-        if (want.format != AUDIO_F32) /* we let this one thing change. */
-            SDL_Log("We didn't get Float32 audio format.");
-        SDL_PauseAudioDevice(sdlAudioDevice, 0);
-    }
+    Platform_AudioInit(42060);
+    cgb_audio_init(42060);
 #ifndef __ANDROID__
-    VDraw(sdlTexture);
+    Platform_VideoDrawFrame();
 #endif
-    mainLoopThread = SDL_CreateThread(DoMain, "AgbMain", NULL);
+    if (!Platform_SchedulerInit())
+    {
+        DBGPRINTF("Unable to initialize scheduler\n");
+        return 1;
+    }
 
     double accumulator = 0.0;
+    u64 lastPresentationCounter = 0;
+    u64 presentationCount = 0;
+    enum NativeStateRequest stateRequest = NATIVE_STATE_REQUEST_NONE;
+    bool32 traceScheduler = EnvironmentEnabled("POKEEMERALD_SCHEDULER_TRACE");
+    u32 probePresentations = EnvironmentUnsigned("POKEEMERALD_SCHEDULER_PROBE_PRESENTATIONS", 0);
+    u32 probeSpeed = EnvironmentUnsigned("POKEEMERALD_SCHEDULER_PROBE_SPEED", UINT32_MAX);
 
-    memset(&internalClock, 0, sizeof(internalClock));
-    internalClock.status = SIIRTCINFO_24HOUR;
-    UpdateInternalClock();
+    if (probeSpeed == 0 || (probeSpeed >= 1 && probeSpeed <= 5))
+    {
+        speedUp = probeSpeed != 1;
+        timeScale = probeSpeed == 0 ? 0.0 : probeSpeed;
+        Platform_SchedulerSetSpeed((u8)probeSpeed);
+        Platform_VideoSetFastForward(speedUp);
+    }
 
     while (isRunning)
     {
-        ProcessEvents();
+        struct PlatformInputActions input;
+        Platform_InputPoll(&input);
+        if (input.quit)
+            isRunning = false;
+        if (input.quickSave)
+            stateRequest = NATIVE_STATE_REQUEST_SAVE;
+        if (input.quickLoad)
+            stateRequest = NATIVE_STATE_REQUEST_LOAD;
+        if (input.openStateManager)
+        {
+            enum PlatformStateUiResult uiResult = RunStateUi(TRUE, &accumulator,
+                                                              &lastPresentationCounter);
+            if (uiResult == PLATFORM_STATE_UI_LOADED)
+                Platform_VideoSetStatus("State loaded");
+            else if (uiResult == PLATFORM_STATE_UI_QUIT)
+                isRunning = FALSE;
+        }
+        if (input.manualSave && isRunning)
+        {
+            enum PlatformStateUiResult uiResult = RunStateUi(FALSE, &accumulator,
+                                                              &lastPresentationCounter);
+            if (uiResult == PLATFORM_STATE_UI_SAVED)
+            {
+                const char *warning = Platform_StateGetLastError();
+                Platform_VideoSetStatus(warning != NULL && warning[0] != '\0'
+                                      ? warning : "State saved");
+            }
+            else if (uiResult == PLATFORM_STATE_UI_QUIT)
+                isRunning = FALSE;
+        }
+        if (input.reset)
+            DoSoftReset();
+        if (input.openSettings)
+        {
+            bool32 wasPaused = paused;
+            paused = TRUE;
+            Platform_AudioSetPaused(TRUE);
+            Platform_FrontendRunSettings();
+            paused = wasPaused;
+            if (!paused)
+            {
+                Platform_AudioClearQueue();
+                Platform_AudioSetPaused(FALSE);
+            }
+            lastPresentationCounter = 0;
+            accumulator = 0.0;
+        }
+        if (input.togglePause)
+        {
+            paused = !paused;
+            if (paused)
+                Platform_AudioSetPaused(TRUE);
+            else
+            {
+                Platform_AudioClearQueue();
+                Platform_AudioSetPaused(FALSE);
+            }
+        }
+        if (input.speedUpChanged)
+        {
+            speedUp = input.speedUp;
+            timeScale = speedUp ? (input.speed == 0 ? 0.0 : input.speed) : 1.0;
+            Platform_SchedulerSetSpeed(speedUp ? input.speed : 1);
+            Platform_VideoSetFastForward(speedUp);
+            lastPresentationCounter = 0;
+            if (!speedUp && paused)
+                Platform_AudioSetPaused(TRUE);
+        }
+
+        /* A key request is not considered serviced until the worker has
+         * published the next quiescent VBlank boundary. */
+        if (stateRequest != NATIVE_STATE_REQUEST_NONE
+         && Platform_SchedulerWaitForFrame(1000))
+        {
+            PrepareHostFrame(stateRequest, PLATFORM_STATE_QUICK_SLOT,
+                             &accumulator, &lastPresentationCounter);
+            stateRequest = NATIVE_STATE_REQUEST_NONE;
+        }
 
         if (!paused)
         {
-            double dt = fixedTimestep / timeScale; // TODO: Fix speedup
+            u8 schedulerSpeed = Platform_SchedulerGetSpeed();
+            u64 beforeFrame = Platform_SchedulerGetFrameCounter();
+            u64 frequency = SDL_GetPerformanceFrequency();
+            u64 batchDeadline;
+            u32 targetFrames = schedulerSpeed == 0 ? 256 : schedulerSpeed;
+            u32 completedFrames = 0;
 
-            curGameTime = SDL_GetPerformanceCounter();
-            double deltaTime = (double)((curGameTime - lastGameTime) / (double)SDL_GetPerformanceFrequency());
-            if (deltaTime > (dt * 5))
-                deltaTime = dt;
-            lastGameTime = curGameTime;
-
-            accumulator += deltaTime;
-
-            while (accumulator >= dt)
+            if (lastPresentationCounter == 0)
+                lastPresentationCounter = SDL_GetPerformanceCounter();
+            batchDeadline = lastPresentationCounter + frequency / 60;
+            while (completedFrames < targetFrames && isRunning)
             {
-                if (SDL_AtomicGet(&isFrameAvailable))
+                bool32 finalFrame;
+                if (!Platform_SchedulerWaitForFrame(1000))
                 {
-                    if (sNativeStateRequest != NATIVE_STATE_REQUEST_NONE)
-                    {
-                        enum NativeStateResult result;
-
-                        if (sNativeStateRequest == NATIVE_STATE_REQUEST_SAVE)
-                            result = NativeState_Save(PLATFORM_STATE_QUICK_SLOT);
-                        else
-                            result = NativeState_Load(PLATFORM_STATE_QUICK_SLOT);
-                        if (result == NATIVE_STATE_OK)
-                        {
-                            char statePath[512];
-
-                            if (!Platform_ProfileGetStatePath(PLATFORM_STATE_QUICK_SLOT,
-                                                              statePath, sizeof(statePath)))
-                                strcpy(statePath, "<state path unavailable>");
-                            fprintf(stderr, "native state %s: %s\n",
-                                    sNativeStateRequest == NATIVE_STATE_REQUEST_SAVE ? "saved" : "loaded",
-                                    statePath);
-                        }
-                        else
-                            fprintf(stderr, "native state %s failed: %s\n",
-                                    sNativeStateRequest == NATIVE_STATE_REQUEST_SAVE ? "save" : "load",
-                                    NativeState_GetLastError());
-                        fflush(stderr);
-                        sNativeStateRequest = NATIVE_STATE_REQUEST_NONE;
-                    }
-                    VDraw(sdlTexture);
-                    SDL_RenderClear(sdlRenderer);
-#if defined(NATIVE_LINUX) || defined(_WIN32)
-                    u8 backgroundOption = Platform_GetBorderBackground();
-                    if (backgroundOption < sBorderBackgroundCount
-                     && sdlBackgroundTextures[backgroundOption] != NULL)
-                        SDL_RenderCopy(sdlRenderer, sdlBackgroundTextures[backgroundOption], NULL, NULL);
-                    int outputWidth;
-                    int outputHeight;
-                    SDL_GetRendererOutputSize(sdlRenderer, &outputWidth, &outputHeight);
-                    int gameHeight;
-                    int gameWidth;
-                    if (sPlatformSettings[PLATFORM_SETTING_INTEGER_SCALE])
-                    {
-                        int scale = outputWidth / DISPLAY_WIDTH;
-                        if (outputHeight / DISPLAY_HEIGHT < scale)
-                            scale = outputHeight / DISPLAY_HEIGHT;
-                        if (scale < 1)
-                            scale = 1;
-                        gameWidth = DISPLAY_WIDTH * scale;
-                        gameHeight = DISPLAY_HEIGHT * scale;
-                    }
-                    else
-                    {
-                        gameHeight = outputHeight * 8 / 9;
-                        gameWidth = gameHeight * 3 / 2;
-                    }
-                    SDL_Rect gameViewport = {(outputWidth - gameWidth) / 2,
-                                             (outputHeight - gameHeight) / 2,
-                                             gameWidth, gameHeight};
-                    SDL_RenderCopy(sdlRenderer, sdlTexture, NULL, &gameViewport);
-                    if (sPlatformSettings[PLATFORM_SETTING_BORDER] && sdlBorderTexture != NULL)
-                    {
-                        SDL_Rect borderSource = {141, 18, 1000, 683};
-                        int innerWidth = gameViewport.w - 2;
-                        int innerHeight = gameViewport.h - 2;
-                        SDL_Rect borderViewport = {
-                            gameViewport.x + 1 - innerWidth * 19 / 961,
-                            gameViewport.y + 1 - innerHeight * 20 / 643,
-                            innerWidth * 1000 / 961,
-                            innerHeight * 683 / 643
-                        };
-                        SDL_RenderCopy(sdlRenderer, sdlBorderTexture, &borderSource, &borderViewport);
-                    }
-#else
-                    SDL_RenderCopy(sdlRenderer, sdlTexture, NULL, NULL);
-#endif
-#ifdef __ANDROID__
-                    SDL_RenderPresent(sdlRenderer);
-#endif
-                    SDL_AtomicSet(&isFrameAvailable, 0);
-
-                    REG_DISPSTAT |= INTR_FLAG_VBLANK;
-
-                    RunDMAs(DMA_HBLANK);
-
-#ifdef __ANDROID__
-                    if (REG_IE & INTR_FLAG_VBLANK)
-#else
-                    if (REG_DISPSTAT & DISPSTAT_VBLANK_INTR)
-#endif
-                        gIntrTable[4]();
-                    REG_DISPSTAT &= ~INTR_FLAG_VBLANK;
-
-                    SDL_SemPost(vBlankSemaphore);
-
-                    Platform_SchedulerAdvanceFrame();
-
-                    accumulator -= dt;
+                    fprintf(stderr, "Scheduler timed out waiting for simulation frame\n");
+                    fflush(stderr);
+                    isRunning = FALSE;
+                    break;
                 }
+                finalFrame = schedulerSpeed == 0
+                    ? ((completedFrames != 0 && SDL_GetPerformanceCounter() >= batchDeadline)
+                       || completedFrames + 1 == targetFrames)
+                    : completedFrames + 1 == targetFrames;
+                if (finalFrame)
+                    PrepareHostFrame(NATIVE_STATE_REQUEST_NONE, PLATFORM_STATE_QUICK_SLOT,
+                                     &accumulator, &lastPresentationCounter);
+                Platform_SchedulerCompleteFrame();
+                completedFrames++;
+                if (schedulerSpeed == 0 && finalFrame)
+                    break;
             }
-        }
 
-#ifndef __ANDROID__
-        SDL_RenderPresent(sdlRenderer);
+            if (traceScheduler)
+                fprintf(stderr,
+                        "Scheduler presentation=%llu speed=%u simulation_frames=%llu\n",
+                        (unsigned long long)(presentationCount + 1), schedulerSpeed,
+                        (unsigned long long)(Platform_SchedulerGetFrameCounter() - beforeFrame));
+        }
+        else
+            SDL_Delay(1);
+
+#ifdef __ANDROID__
+        DrawTouchControls();
 #endif
+        if (speedUp || !Platform_GetSetting(PLATFORM_SETTING_VSYNC))
+            PacePresentation(&lastPresentationCounter);
+        Platform_VideoPresent();
+        presentationCount++;
+        if (probePresentations != 0 && presentationCount >= probePresentations)
+            isRunning = FALSE;
     }
 
-    //StoreSaveFile();
-    CloseSaveFile();
+    //Platform_StoreSaveFile();
+    Platform_SchedulerShutdown();
+    Platform_StorageShutdown();
 
-#if defined(NATIVE_LINUX) || defined(_WIN32)
-    for (int i = 0; i < sBorderBackgroundCount; i++)
-        SDL_DestroyTexture(sdlBackgroundTextures[i]);
-    SDL_DestroyTexture(sdlBorderTexture);
-#endif
-#ifdef NATIVE_LINUX
-    IMG_Quit();
-#endif
-    SDL_DestroyWindow(sdlWindow);
+    Platform_VideoShutdown();
+    Platform_InputShutdown();
+    Platform_AudioShutdown();
     SDL_Quit();
     return 0;
 }
 
-static void ReadSaveFile(const char *path)
-{
-    // Check whether the saveFile exists, and create it if not
-    sSaveFile = fopen(path, "r+b");
-    if (sSaveFile == NULL)
-    {
-        sSaveFile = fopen(path, "w+b");
-    }
-
-    if (sSaveFile == NULL)
-    {
-        memset(FLASH_BASE, 0xFF, sizeof(FLASH_BASE));
-        SDL_Log("Unable to open save file: %s", path);
-        return;
-    }
-
-    fseek(sSaveFile, 0, SEEK_END);
-    int fileSize = ftell(sSaveFile);
-    fseek(sSaveFile, 0, SEEK_SET);
-
-    // Only read as many bytes as fit inside the buffer
-    // or as many bytes as are in the file
-    int bytesToRead = (fileSize < sizeof(FLASH_BASE)) ? fileSize : sizeof(FLASH_BASE);
-
-    int bytesRead = fread(FLASH_BASE, 1, bytesToRead, sSaveFile);
-
-    // Fill the buffer if the savefile was just created or smaller than the buffer itself
-    for (int i = bytesRead; i < sizeof(FLASH_BASE); i++)
-    {
-        FLASH_BASE[i] = 0xFF;
-    }
-}
-
-static void ReadConfigFile(void)
-{
-    FILE *configFile = fopen(sConfigPath, "r");
-    char line[64];
-    unsigned int value;
-
-    if (configFile == NULL)
-        return;
-    while (fgets(line, sizeof(line), configFile) != NULL)
-    {
-        if (sscanf(line, "borderBackground=%u", &value) == 1 && value < 16)
-        {
-            sBorderBackground = value;
-            sHasBorderBackgroundConfig = true;
-        }
-        else if (sscanf(line, "backgroundOrder=%u", &value) == 1)
-            sBackgroundOrderVersion = value;
-        else if (sscanf(line, "fullscreen=%u", &value) == 1)
-            sPlatformSettings[PLATFORM_SETTING_FULLSCREEN] = value != 0;
-        else if (sscanf(line, "windowScale=%u", &value) == 1 && value >= 2 && value <= 5)
-            sPlatformSettings[PLATFORM_SETTING_WINDOW_SCALE] = value;
-        else if (sscanf(line, "integerScale=%u", &value) == 1)
-            sPlatformSettings[PLATFORM_SETTING_INTEGER_SCALE] = value != 0;
-        else if (sscanf(line, "vsync=%u", &value) == 1)
-            sPlatformSettings[PLATFORM_SETTING_VSYNC] = value != 0;
-        else if (sscanf(line, "border=%u", &value) == 1)
-            sPlatformSettings[PLATFORM_SETTING_BORDER] = value != 0;
-        else if (sscanf(line, "volume=%u", &value) == 1 && value <= 10)
-            sPlatformSettings[PLATFORM_SETTING_VOLUME] = value;
-    }
-    fclose(configFile);
-}
-
-static void StoreConfigFile(void)
-{
-    FILE *configFile = fopen(sConfigPath, "w");
-
-    if (configFile == NULL)
-        return;
-    fprintf(configFile, "borderBackground=%u\n", sBorderBackground);
-    fprintf(configFile, "backgroundOrder=2\n");
-    fprintf(configFile, "fullscreen=%u\n", sPlatformSettings[PLATFORM_SETTING_FULLSCREEN]);
-    fprintf(configFile, "windowScale=%u\n", sPlatformSettings[PLATFORM_SETTING_WINDOW_SCALE]);
-    fprintf(configFile, "integerScale=%u\n", sPlatformSettings[PLATFORM_SETTING_INTEGER_SCALE]);
-    fprintf(configFile, "vsync=%u\n", sPlatformSettings[PLATFORM_SETTING_VSYNC]);
-    fprintf(configFile, "border=%u\n", sPlatformSettings[PLATFORM_SETTING_BORDER]);
-    fprintf(configFile, "volume=%u\n", sPlatformSettings[PLATFORM_SETTING_VOLUME]);
-    fclose(configFile);
-}
-
+#if 0
 static void ApplyPlatformSettings(void)
 {
-    SDL_RenderSetVSync(sdlRenderer, sPlatformSettings[PLATFORM_SETTING_VSYNC]);
+    SDL_RenderSetVSync(sdlRenderer, Platform_GetSetting(PLATFORM_SETTING_VSYNC));
 #if defined(NATIVE_LINUX) || defined(_WIN32)
-    SDL_SetWindowFullscreen(sdlWindow, sPlatformSettings[PLATFORM_SETTING_FULLSCREEN]
+    SDL_SetWindowFullscreen(sdlWindow, Platform_GetSetting(PLATFORM_SETTING_FULLSCREEN)
                                       ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
-    if (!sPlatformSettings[PLATFORM_SETTING_FULLSCREEN])
+    if (!Platform_GetSetting(PLATFORM_SETTING_FULLSCREEN))
     {
-        int scale = sPlatformSettings[PLATFORM_SETTING_WINDOW_SCALE];
+        int scale = Platform_GetSetting(PLATFORM_SETTING_WINDOW_SCALE);
         SDL_SetWindowSize(sdlWindow, 320 * scale, 180 * scale);
         SDL_SetWindowPosition(sdlWindow, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
     }
 #endif
 }
-
-static void StoreSaveFile()
-{
-    if (sSaveFile != NULL)
-    {
-        fseek(sSaveFile, 0, SEEK_SET);
-        fwrite(FLASH_BASE, 1, sizeof(FLASH_BASE), sSaveFile);
-    }
-}
+#endif
 
 void Platform_StoreSaveFile(void)
 {
-    StoreSaveFile();
+    if (!Platform_StorageWriteSave(FLASH_BASE, sizeof(FLASH_BASE)))
+        DBGPRINTF("Unable to store save file\n");
 }
 
 void Platform_ReadFlash(u16 sectorNum, u32 offset, u8 *dest, u32 size)
 {
-    DBGPRINTF("ReadFlash(sectorNum=0x%04X,offset=0x%08X,size=0x%02X)\n",sectorNum,offset,size);
-    FILE * savefile = fopen(sSavePath, "r+b");
-    if (savefile == NULL)
-    {
-        puts("Error opening save file.");
-        return;
-    }
-    if (fseek(savefile, (sectorNum << gFlash->sector.shift) + offset, SEEK_SET))
-    {
-        fclose(savefile);
-        return;
-    }
-    if (fread(dest, 1, size, savefile) != size)
-    {
-        fclose(savefile);
-        return;
-    }
-    fclose(savefile);
-}
-
-void Platform_QueueAudio(float *audioBuffer, s32 samplesPerFrame)
-{
-    if (sdlAudioDevice != 0)
-    {
-        int floatCount = samplesPerFrame / sizeof(float);
-        float adjustedAudio[floatCount];
-        float volume = sPlatformSettings[PLATFORM_SETTING_VOLUME] / 10.0f;
-        for (int i = 0; i < floatCount; i++)
-            adjustedAudio[i] = audioBuffer[i] * volume;
-        if (SDL_QueueAudio(sdlAudioDevice, adjustedAudio, samplesPerFrame) < 0)
-            SDL_Log("Failed to queue audio: %s", SDL_GetError());
-    }
+    if (!Platform_StorageReadFlash(sectorNum, offset, dest, size))
+        DBGPRINTF("ReadFlash out of bounds or unavailable\n");
 }
 
 u8 Platform_GetBorderBackgroundCount(void)
 {
-    return sBorderBackgroundCount + 1;
+    return Platform_VideoGetBackgroundCount() + 1;
 }
 
 u8 Platform_GetBorderBackground(void)
 {
-    if (sHasBorderBackgroundConfig)
-        return sBorderBackground;
+    if (Platform_ConfigHasBorderBackground())
+        return Platform_ConfigGetBorderBackground();
     if (gSaveBlock2Ptr != NULL)
     {
         u8 legacySelection = gSaveBlock2Ptr->optionsBorderBackground;
         if (legacySelection == 1)
-            return sBorderBackgroundCount;
+            return Platform_VideoGetBackgroundCount();
         if (legacySelection >= 2)
             return legacySelection - 1;
     }
@@ -604,39 +708,15 @@ u8 Platform_GetBorderBackground(void)
 
 void Platform_SetBorderBackground(u8 selection)
 {
-    sBorderBackground = selection;
-    sHasBorderBackgroundConfig = true;
-    StoreConfigFile();
-}
-
-u8 Platform_GetSetting(enum PlatformSetting setting)
-{
-    return sPlatformSettings[setting];
+    Platform_ConfigSetBorderBackground(selection);
+    Platform_ConfigStore();
 }
 
 void Platform_SetSetting(enum PlatformSetting setting, u8 value)
 {
-    sPlatformSettings[setting] = value;
-    if (setting == PLATFORM_SETTING_VSYNC)
-        SDL_RenderSetVSync(sdlRenderer, value);
-#if defined(NATIVE_LINUX) || defined(_WIN32)
-    else if (setting == PLATFORM_SETTING_FULLSCREEN)
-    {
-        SDL_SetWindowFullscreen(sdlWindow, value ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
-        if (!value)
-        {
-            int scale = sPlatformSettings[PLATFORM_SETTING_WINDOW_SCALE];
-            SDL_SetWindowSize(sdlWindow, 320 * scale, 180 * scale);
-            SDL_SetWindowPosition(sdlWindow, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
-        }
-    }
-    else if (setting == PLATFORM_SETTING_WINDOW_SCALE && !sPlatformSettings[PLATFORM_SETTING_FULLSCREEN])
-    {
-        SDL_SetWindowSize(sdlWindow, 320 * value, 180 * value);
-        SDL_SetWindowPosition(sdlWindow, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
-    }
-#endif
-    StoreConfigFile();
+    Platform_ConfigSetSetting(setting, value);
+    Platform_VideoApplySetting(setting, value);
+    Platform_ConfigStore();
 }
 
 #ifdef __ANDROID__
@@ -654,34 +734,6 @@ JNIEXPORT jint JNICALL Java_com_pokeemerald_experimental_GbaControlsView_getPlat
 #endif
 
 
-static void CloseSaveFile()
-{
-    if (sSaveFile != NULL)
-    {
-        fclose(sSaveFile);
-    }
-}
-
-// Key mappings
-#define KEY_A_BUTTON      SDLK_z
-#define KEY_B_BUTTON      SDLK_x
-#define KEY_START_BUTTON  SDLK_RETURN
-#define KEY_SELECT_BUTTON SDLK_BACKSLASH
-#define KEY_L_BUTTON      SDLK_a
-#define KEY_R_BUTTON      SDLK_s
-#define KEY_DPAD_UP       SDLK_UP
-#define KEY_DPAD_DOWN     SDLK_DOWN
-#define KEY_DPAD_LEFT     SDLK_LEFT
-#define KEY_DPAD_RIGHT    SDLK_RIGHT
-
-#define HANDLE_KEYUP(key) \
-case KEY_##key:  keyboardKeys &= ~key; break;
-
-#define HANDLE_KEYDOWN(key) \
-case KEY_##key:  keyboardKeys |= key; break;
-
-static u16 keyboardKeys;
-
 #ifdef __ANDROID__
 #define MAX_TOUCH_FINGERS 10
 
@@ -693,13 +745,8 @@ struct TouchFinger
     bool active;
 };
 
-static struct TouchFinger touchFingers[MAX_TOUCH_FINGERS];
-static u16 touchKeys;
-static u16 controllerKeys;
-static u16 controllerAxisKeys;
-static Sint16 controllerAxisX;
-static Sint16 controllerAxisY;
-
+HOST_DATA static struct TouchFinger touchFingers[MAX_TOUCH_FINGERS];
+HOST_DATA static u16 touchKeys;
 static bool IsInsideRect(int x, int y, SDL_Rect rect)
 {
     SDL_Point point = {x, y};
@@ -773,7 +820,7 @@ static void UpdateTouchKeys(void)
     }
 }
 
-static void HandleTouchEvent(const SDL_TouchFingerEvent *event)
+void Platform_HandleTouchEvent(const SDL_TouchFingerEvent *event)
 {
     int slot = -1;
     for (int i = 0; i < MAX_TOUCH_FINGERS; i++)
@@ -911,25 +958,9 @@ static void DrawTouchControls(void)
     SDL_RenderSetIntegerScale(sdlRenderer, SDL_TRUE);
 }
 
-static u16 ControllerButtonMask(Uint8 button)
-{
-    switch (button)
-    {
-    case SDL_CONTROLLER_BUTTON_A:             return A_BUTTON;
-    case SDL_CONTROLLER_BUTTON_B:             return B_BUTTON;
-    case SDL_CONTROLLER_BUTTON_BACK:          return SELECT_BUTTON;
-    case SDL_CONTROLLER_BUTTON_START:         return START_BUTTON;
-    case SDL_CONTROLLER_BUTTON_LEFTSHOULDER:  return L_BUTTON;
-    case SDL_CONTROLLER_BUTTON_RIGHTSHOULDER: return R_BUTTON;
-    case SDL_CONTROLLER_BUTTON_DPAD_UP:       return DPAD_UP;
-    case SDL_CONTROLLER_BUTTON_DPAD_DOWN:     return DPAD_DOWN;
-    case SDL_CONTROLLER_BUTTON_DPAD_LEFT:     return DPAD_LEFT;
-    case SDL_CONTROLLER_BUTTON_DPAD_RIGHT:    return DPAD_RIGHT;
-    default:                                  return 0;
-    }
-}
 #endif
 
+#if 0
 void ProcessEvents(void)
 {
     SDL_Event event;
@@ -995,8 +1026,8 @@ void ProcessEvents(void)
                 {
                     speedUp = false;
                     timeScale = 1.0;
-                    SDL_ClearQueuedAudio(sdlAudioDevice);
-                    SDL_PauseAudioDevice(sdlAudioDevice, 0);
+                    Platform_AudioClearQueue();
+                    Platform_AudioSetPaused(FALSE);
                 }
                 break;
             }
@@ -1026,18 +1057,12 @@ void ProcessEvents(void)
                     paused = !paused;
                 }
                 break;
-            case SDLK_F5:
-                sNativeStateRequest = NATIVE_STATE_REQUEST_SAVE;
-                break;
-            case SDLK_F9:
-                sNativeStateRequest = NATIVE_STATE_REQUEST_LOAD;
-                break;
             case SDLK_SPACE:
                 if (!speedUp)
                 {
                     speedUp = true;
                     timeScale = 5.0;
-                    SDL_PauseAudioDevice(sdlAudioDevice, 1);
+                    Platform_AudioSetPaused(TRUE);
                 }
                 break;
             }
@@ -1089,12 +1114,12 @@ u16 GetXInputKeys()
         {
             if (timeScale > 1.0)
             {
-                SDL_PauseAudioDevice(sdlAudioDevice, 1);
+                Platform_AudioSetPaused(TRUE);
             }
             else
             {
-                SDL_ClearQueuedAudio(sdlAudioDevice);
-                SDL_PauseAudioDevice(sdlAudioDevice, 0);
+                Platform_AudioClearQueue();
+                Platform_AudioSetPaused(FALSE);
             }
         }
     }
@@ -1103,138 +1128,15 @@ u16 GetXInputKeys()
 }
 #endif // _WIN32
 
-u16 Platform_GetKeyInput(void)
-{
-#ifdef _WIN32
-    u16 gamepadKeys = GetXInputKeys();
-    return gamepadKeys | keyboardKeys;
-#elif defined(__ANDROID__)
-    return keyboardKeys | controllerKeys | controllerAxisKeys;
 #endif
 
-    return keyboardKeys;
-}
-
-void VDraw(SDL_Texture *texture)
+u16 Platform_GetKeyInput(void)
 {
-    static uint16_t gbaImage[DISPLAY_WIDTH * DISPLAY_HEIGHT];
-    static uint32_t image[DISPLAY_WIDTH * DISPLAY_HEIGHT];
-
-    memset(gbaImage, 0, sizeof(gbaImage));
-    DrawFrame(gbaImage);
-    for (int i = 0; i < DISPLAY_WIDTH * DISPLAY_HEIGHT; i++)
-    {
-        uint16_t color = gbaImage[i];
-        uint32_t r = (color & 0x1F) * 255 / 31;
-        uint32_t g = ((color >> 5) & 0x1F) * 255 / 31;
-        uint32_t b = ((color >> 10) & 0x1F) * 255 / 31;
-        image[i] = 0xFF000000 | (r << 16) | (g << 8) | b;
-    }
-    SDL_UpdateTexture(texture, NULL, image, DISPLAY_WIDTH * sizeof(Uint32));
-    REG_VCOUNT = 161; // prep for being in VBlank period
-}
-
-int DoMain(void *data)
-{
-    AgbMain();
-    return 0;
-}
-
-void VBlankIntrWait(void)
-{
-    SDL_AtomicSet(&isFrameAvailable, 1);
-    SDL_SemWait(vBlankSemaphore);
-}
-
-u8 BinToBcd(u8 bin)
-{
-    int placeCounter = 1;
-    u8 out = 0;
-    do
-    {
-        out |= (bin % 10) * placeCounter;
-        placeCounter *= 16;
-    }
-    while ((bin /= 10) > 0);
-
-    return out;
-}
-
-void Platform_GetStatus(struct SiiRtcInfo *rtc)
-{
-    rtc->status = internalClock.status;
-}
-
-void Platform_SetStatus(struct SiiRtcInfo *rtc)
-{
-    internalClock.status = rtc->status;
-}
-
-static void UpdateInternalClock(void)
-{
-    time_t rawTime = time(NULL);
-    struct tm *time = localtime(&rawTime);
-
-    internalClock.year = BinToBcd(time->tm_year - 100);
-    internalClock.month = BinToBcd(time->tm_mon + 1);
-    internalClock.day = BinToBcd(time->tm_mday);
-    internalClock.dayOfWeek = BinToBcd(time->tm_wday);
-    internalClock.hour = BinToBcd(time->tm_hour);
-    internalClock.minute = BinToBcd(time->tm_min);
-    internalClock.second = BinToBcd(time->tm_sec);
-}
-
-void Platform_GetDateTime(struct SiiRtcInfo *rtc)
-{
-    UpdateInternalClock();
-
-    rtc->year = internalClock.year;
-    rtc->month = internalClock.month;
-    rtc->day = internalClock.day;
-    rtc->dayOfWeek = internalClock.dayOfWeek;
-    rtc->hour = internalClock.hour;
-    rtc->minute = internalClock.minute;
-    rtc->second = internalClock.second;
-    DBGPRINTF("GetDateTime: %d-%02d-%02d %02d:%02d:%02d\n", ConvertBcdToBinary(rtc->year),
-                                                         ConvertBcdToBinary(rtc->month),
-                                                         ConvertBcdToBinary(rtc->day),
-                                                         ConvertBcdToBinary(rtc->hour),
-                                                         ConvertBcdToBinary(rtc->minute),
-                                                         ConvertBcdToBinary(rtc->second));
-}
-
-void Platform_SetDateTime(struct SiiRtcInfo *rtc)
-{
-    internalClock.month = rtc->month;
-    internalClock.day = rtc->day;
-    internalClock.dayOfWeek = rtc->dayOfWeek;
-    internalClock.hour = rtc->hour;
-    internalClock.minute = rtc->minute;
-    internalClock.second = rtc->second;
-}
-
-void Platform_GetTime(struct SiiRtcInfo *rtc)
-{
-    UpdateInternalClock();
-
-    rtc->hour = internalClock.hour;
-    rtc->minute = internalClock.minute;
-    rtc->second = internalClock.second;
-    DBGPRINTF("GetTime: %02d:%02d:%02d\n", ConvertBcdToBinary(rtc->hour),
-                                        ConvertBcdToBinary(rtc->minute),
-                                        ConvertBcdToBinary(rtc->second));
-}
-
-void Platform_SetTime(struct SiiRtcInfo *rtc)
-{
-    internalClock.hour = rtc->hour;
-    internalClock.minute = rtc->minute;
-    internalClock.second = rtc->second;
-}
-
-void Platform_SetAlarm(u8 *alarmData)
-{
-    // TODO
+#ifdef __ANDROID__
+    return Platform_InputGetKeys() | touchKeys;
+#else
+    return Platform_InputGetKeys();
+#endif
 }
 
 void SoftReset(u32 resetFlags)

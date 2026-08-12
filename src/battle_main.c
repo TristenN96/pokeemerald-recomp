@@ -3491,7 +3491,7 @@ static void BattleIntroDrawTrainersOrMonsSprites(void)
 static void BattleIntroDrawPartySummaryScreens(void)
 {
     s32 i;
-    struct HpAndStatus hpStatus[PARTY_SIZE];
+    struct HpAndStatus hpStatus[PARTY_SIZE] = {0};
 
     if (gBattleControllerExecFlags)
         return;

@@ -26,6 +26,7 @@
 #include "gba/flash_internal.h"
 #include "platform/desktop_clock.h"
 #include "platform/desktop_audio.h"
+#include "platform/desktop_runtime.h"
 #include "platform/desktop_scheduler.h"
 #include "platform/desktop_storage.h"
 #include "platform/desktop_video.h"
@@ -36,7 +37,11 @@
 #define NATIVE_STATE_MAGIC 0x4E535431u /* NST1 */
 #define NATIVE_STATE_FORMAT_VERSION 4u
 #define NATIVE_STATE_MAX_FILE_SIZE (32u * 1024u * 1024u)
+#ifdef _WIN32
+#define NATIVE_STATE_ABI_ID "windows64-v1"
+#else
 #define NATIVE_STATE_ABI_ID "linux64-v5"
+#endif
 #define NATIVE_STATE_CONTENT_FINGERPRINT "f3ae088181bf583e55daf962a92bb46f4f1d07b7"
 
 enum NativeStateSectionTag
@@ -99,9 +104,6 @@ extern unsigned char __start_gba_common[];
 extern unsigned char __stop_gba_common[];
 extern unsigned char __start_host_data[];
 extern unsigned char __stop_host_data[];
-extern unsigned char __bss_start[];
-extern unsigned char __executable_start[];
-extern unsigned char _end[];
 extern s16 WAV[32];
 extern u8 apuCycle;
 extern const u8 *gAIScriptPtr;
@@ -161,90 +163,7 @@ static void SetError(const char *message)
 
 static bool32 GetNativeBuildId(char *dest, u32 destSize)
 {
-    if (dest == NULL || destSize == 0)
-        return FALSE;
-#if defined(__linux__) && UINTPTR_MAX > UINT32_MAX
-    {
-        FILE *file = NULL;
-        Elf64_Ehdr header;
-        Elf64_Phdr *programs = NULL;
-        bool32 found = FALSE;
-        u32 i;
-
-        file = fopen("/proc/self/exe", "rb");
-        if (file == NULL || fread(&header, sizeof(header), 1, file) != 1
-         || memcmp(header.e_ident, ELFMAG, SELFMAG) != 0
-         || header.e_ident[EI_CLASS] != ELFCLASS64
-         || (header.e_type != ET_EXEC && header.e_type != ET_DYN)
-         || header.e_phentsize != sizeof(Elf64_Phdr) || header.e_phnum == 0)
-            goto finish;
-        programs = malloc((size_t)header.e_phnum * sizeof(*programs));
-        if (programs == NULL
-         || fseek(file, (long)header.e_phoff, SEEK_SET) != 0
-         || fread(programs, sizeof(*programs), header.e_phnum, file) != header.e_phnum)
-            goto finish;
-        for (i = 0; i < header.e_phnum && !found; i++)
-        {
-            u8 *notes;
-            size_t offset = 0;
-
-            if (programs[i].p_type != PT_NOTE || programs[i].p_filesz > SIZE_MAX)
-                continue;
-            notes = malloc((size_t)programs[i].p_filesz);
-            if (notes == NULL)
-                goto finish;
-            if (fseek(file, (long)programs[i].p_offset, SEEK_SET) != 0
-             || fread(notes, 1, (size_t)programs[i].p_filesz, file) != programs[i].p_filesz)
-            {
-                free(notes);
-                goto finish;
-            }
-            while (offset + sizeof(Elf64_Nhdr) <= programs[i].p_filesz)
-            {
-                Elf64_Nhdr note;
-                size_t nameOffset;
-                size_t descOffset;
-                size_t nextOffset;
-                size_t required;
-                u32 byte;
-
-                memcpy(&note, notes + offset, sizeof(note));
-                nameOffset = offset + sizeof(note);
-                descOffset = nameOffset + ((note.n_namesz + 3u) & ~3u);
-                nextOffset = descOffset + ((note.n_descsz + 3u) & ~3u);
-                if (descOffset < nameOffset || nextOffset < descOffset
-                 || nextOffset > programs[i].p_filesz)
-                    break;
-                required = strlen(NATIVE_STATE_ABI_ID) + 1u + 2u * note.n_descsz + 1u;
-                if (note.n_type == NT_GNU_BUILD_ID && note.n_namesz >= 3
-                 && memcmp(notes + nameOffset, "GNU", 3) == 0
-                 && required <= destSize)
-                {
-                    int written = snprintf(dest, destSize, "%s-", NATIVE_STATE_ABI_ID);
-
-                    if (written < 0 || (u32)written >= destSize)
-                        break;
-                    for (byte = 0; byte < note.n_descsz; byte++)
-                        snprintf(dest + written + byte * 2,
-                                 destSize - (u32)written - byte * 2,
-                                 "%02x", notes[descOffset + byte]);
-                    found = TRUE;
-                    break;
-                }
-                offset = nextOffset;
-            }
-            free(notes);
-        }
-
-finish:
-        free(programs);
-        if (file != NULL)
-            fclose(file);
-        return found;
-    }
-#else
-    return snprintf(dest, destSize, "%s", NATIVE_STATE_ABI_ID) > 0;
-#endif
+    return Platform_RuntimeGetBuildId(NATIVE_STATE_ABI_ID, dest, destSize);
 }
 
 const char *NativeState_GetLastError(void)
@@ -300,9 +219,17 @@ static u32 BuildSlices(struct NativeStateSlice *slices, u32 capacity,
      * are host-owned; the range ends at FLASH_BASE, after which the explicit
      * GBA buffers are listed below. */
     {
-        uintptr_t begin = (uintptr_t)__bss_start + sizeof(void *);
+        uintptr_t bssStart;
+        uintptr_t bssEnd;
+        uintptr_t begin;
         uintptr_t end = (uintptr_t)FLASH_BASE;
-        u32 size = end >= begin && end - begin <= UINT32_MAX ? (u32)(end - begin) : 0;
+        u32 size;
+
+        if (!Platform_RuntimeGetBssRange(&bssStart, &bssEnd)
+         || end < bssStart || end > bssEnd)
+            bssStart = end;
+        begin = bssStart + sizeof(void *);
+        size = end >= begin && end - begin <= UINT32_MAX ? (u32)(end - begin) : 0;
         ADD_SLICE(STATE_SECTION_GAME_BSS, (const void *)begin, size, TRUE);
     }
     ADD_SLICE(STATE_SECTION_REGISTERS, REG_BASE, 0x400, FALSE);
@@ -333,29 +260,18 @@ static u32 BuildSlices(struct NativeStateSlice *slices, u32 capacity,
 
 static bool32 IsExecutableOrGameAddress(uintptr_t value)
 {
-    uintptr_t start = (uintptr_t)__executable_start;
-    uintptr_t end = (uintptr_t)_end;
+    uintptr_t start;
+    uintptr_t end;
     uintptr_t hostStart = (uintptr_t)__start_host_data;
     uintptr_t hostEnd = (uintptr_t)__stop_host_data;
-    return value >= start && value < end
+    return Platform_RuntimeGetImageRange(&start, &end)
+        && value >= start && value < end
         && !(value >= hostStart && value < hostEnd);
 }
 
 static bool32 IsMappedHostAddress(uintptr_t value)
 {
-#if defined(__linux__)
-    long pageSize = sysconf(_SC_PAGESIZE);
-    uintptr_t page;
-    unsigned char resident;
-
-    if (pageSize <= 0)
-        return FALSE;
-    page = value & ~((uintptr_t)pageSize - 1);
-    return mincore((void *)page, (size_t)pageSize, &resident) == 0;
-#else
-    (void)value;
-    return TRUE;
-#endif
+    return Platform_RuntimeAddressIsMapped(value);
 }
 
 static bool32 LooksLikeExternalHostPointer(uintptr_t value)
@@ -707,9 +623,12 @@ static void DescribeBattleBufferLocation(const struct NativeBattleBufferLocation
 static bool32 AddressInObject(uintptr_t address, const void *object, size_t size)
 {
     uintptr_t start = (uintptr_t)object;
+    uintptr_t imageStart;
+    uintptr_t imageEnd;
 
     return object != NULL && IsExecutableOrGameAddress(start)
-        && size <= (uintptr_t)_end - start
+        && Platform_RuntimeGetImageRange(&imageStart, &imageEnd)
+        && start >= imageStart && size <= imageEnd - start
         && address >= start && address - start < size;
 }
 
@@ -1350,13 +1269,21 @@ static void DescribePointerTarget(const struct NativeStateSlice *slice, u32 offs
 #endif
         )
             snprintf(target, targetSize, "logical game function/callback (%s)", symbol);
-        else if ((address >= (uintptr_t)__start_gba_ewram && address < (uintptr_t)__stop_gba_ewram)
-              || (address >= (uintptr_t)__start_gba_iwram && address < (uintptr_t)__stop_gba_iwram)
-              || (address >= (uintptr_t)__start_gba_common && address < (uintptr_t)__stop_gba_common)
-              || (address >= (uintptr_t)__bss_start && address < (uintptr_t)_end))
-            snprintf(target, targetSize, "logical GBA runtime memory (%s)", symbol);
         else
-            snprintf(target, targetSize, "generated/static game data (%s)", symbol);
+        {
+            uintptr_t bssStart;
+            uintptr_t bssEnd;
+            bool32 inBss = Platform_RuntimeGetBssRange(&bssStart, &bssEnd)
+                        && address >= bssStart && address < bssEnd;
+
+            if ((address >= (uintptr_t)__start_gba_ewram && address < (uintptr_t)__stop_gba_ewram)
+             || (address >= (uintptr_t)__start_gba_iwram && address < (uintptr_t)__stop_gba_iwram)
+             || (address >= (uintptr_t)__start_gba_common && address < (uintptr_t)__stop_gba_common)
+             || inBss)
+                snprintf(target, targetSize, "logical GBA runtime memory (%s)", symbol);
+            else
+                snprintf(target, targetSize, "generated/static game data (%s)", symbol);
+        }
         return;
     }
     if (address >= (uintptr_t)__start_host_data && address < (uintptr_t)__stop_host_data)
@@ -2462,6 +2389,11 @@ enum NativeStateResult NativeState_Load(u8 slot)
         return NATIVE_STATE_UNAVAILABLE;
     }
     return LoadStateFromPath(path);
+}
+
+u32 NativeState_GetFormatVersion(void)
+{
+    return NATIVE_STATE_FORMAT_VERSION;
 }
 
 #endif

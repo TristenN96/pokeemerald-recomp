@@ -416,16 +416,26 @@ u8 GetAnimBattlerSpriteId(u8 animBattler)
 
 void StoreSpriteCallbackInData6(struct Sprite *sprite, void (*callback)(struct Sprite *))
 {
+#if defined(LINUX64) && LINUX64
+    sprite->data[6] = 0;
+    sprite->data[7] = 0;
+    Sprite_StoreCallback(sprite, callback);
+#else
     GbaAddr callbackAddr = HostFunctionToGbaAddr(&callback, sizeof(callback));
 
     sprite->data[6] = callbackAddr & 0xffff;
     sprite->data[7] = callbackAddr >> 16;
+#endif
 }
 
 void SetCallbackToStoredInData6(struct Sprite *sprite)
 {
+#if defined(LINUX64) && LINUX64
+    Sprite_SetCallbackFromStored(sprite);
+#else
     GbaAddr callbackAddr = (u16)sprite->data[6] | ((u16)sprite->data[7] << 16);
     HostResolveFunction(callbackAddr, &sprite->callback, sizeof(sprite->callback));
+#endif
 }
 
 // Sprite data for TranslateSpriteInCircle/Ellipse and related

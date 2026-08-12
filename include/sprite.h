@@ -317,5 +317,14 @@ void CopyFromSprites(u8 *dest);
 u8 SpriteTileAllocBitmapOp(u16 bit, u8 op);
 void ClearSpriteCopyRequests(void);
 void ResetAffineAnimData(void);
+#if defined(LINUX64) && LINUX64
+void Sprite_StoreCallback(struct Sprite *sprite, SpriteCallback callback);
+void Sprite_SetCallbackFromStored(struct Sprite *sprite);
+#endif
+u32 Sprite_GetStateSize(void);
+bool32 Sprite_SaveState(void *dest, u32 size);
+bool32 Sprite_ValidateState(const void *source, u32 size);
+bool32 Sprite_LoadState(const void *source, u32 size);
+bool32 Sprite_GetStateFailure(u32 *offset, uintptr_t *address);
 
 #endif //GUARD_SPRITE_H

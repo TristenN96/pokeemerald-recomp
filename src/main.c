@@ -25,6 +25,9 @@
 #include "trainer_hill.h"
 #include "platform.h"
 #include "constants/rgb.h"
+#ifdef PLATFORM_SDL2
+#include "platform/desktop_scheduler.h"
+#endif
 
 static void VBlankIntr(void);
 static void HBlankIntr(void);
@@ -371,7 +374,15 @@ static void VBlankIntr(void)
 
     gPcmDmaCounter = gSoundInfo.pcmDmaCounter;
 
+#ifdef PLATFORM_SDL2
+    if (Platform_SchedulerAudioFrameDue())
+    {
+        m4aSoundMain();
+        m4aSoundVSync();
+    }
+#else
     m4aSoundMain();
+#endif
     TryReceiveLinkBattleData();
 
     if (!gMain.inBattle || !(gBattleTypeFlags & (BATTLE_TYPE_LINK | BATTLE_TYPE_FRONTIER | BATTLE_TYPE_RECORDED)))
@@ -402,7 +413,9 @@ static void VCountIntr(void)
     if (gMain.vcountCallback)
         gMain.vcountCallback();
 
+#ifndef PLATFORM_SDL2
     m4aSoundVSync();
+#endif
     INTR_CHECK |= INTR_FLAG_VCOUNT;
     gMain.intrCheck |= INTR_FLAG_VCOUNT;
 }

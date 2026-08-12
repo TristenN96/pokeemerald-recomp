@@ -1,3 +1,4 @@
+#ifndef DESKTOP_EXTERNAL_GAME_CONTENT
 const u8 gSpeciesNames[][POKEMON_NAME_LENGTH + 1] = {
     [SPECIES_NONE] = _("??????????"),
     [SPECIES_BULBASAUR] = _("BULBASAUR"),
@@ -412,3 +413,4 @@ const u8 gSpeciesNames[][POKEMON_NAME_LENGTH + 1] = {
     [SPECIES_DEOXYS] = _("DEOXYS"),
     [SPECIES_CHIMECHO] = _("CHIMECHO"),
 };
+#endif

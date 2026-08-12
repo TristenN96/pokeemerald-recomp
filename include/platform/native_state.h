@@ -16,6 +16,7 @@ enum NativeStateResult
 
 enum NativeStateResult NativeState_Save(u8 slot);
 enum NativeStateResult NativeState_Load(u8 slot);
+u32 NativeState_GetFormatVersion(void);
 const char *NativeState_GetLastError(void);
 
 #endif

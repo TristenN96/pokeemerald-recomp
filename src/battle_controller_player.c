@@ -1606,8 +1606,8 @@ static void PlayerHandleGetMonData(void)
 
 static u32 CopyPlayerMonData(u8 monId, u8 *dst)
 {
-    struct BattlePokemon battleMon;
-    struct MovePpInfo moveData;
+    struct BattlePokemon battleMon = {0};
+    struct MovePpInfo moveData = {0};
     u8 nickname[POKEMON_NAME_BUFFER_SIZE];
     u8 *src;
     s16 data16;
@@ -1912,7 +1912,7 @@ static u32 CopyPlayerMonData(u8 monId, u8 *dst)
 
 void PlayerHandleGetRawMonData(void)
 {
-    struct BattlePokemon battleMon;
+    struct BattlePokemon battleMon = {0};
     u8 *src = (u8 *)&gPlayerParty[gBattlerPartyIndexes[gActiveBattler]] + gBattleBufferA[gActiveBattler][1];
     u8 *dst = (u8 *)&battleMon + gBattleBufferA[gActiveBattler][1];
     u8 i;

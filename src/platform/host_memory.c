@@ -1,4 +1,5 @@
 #include "global.h"
+#include "platform/desktop_runtime.h"
 #include "platform/host_memory.h"
 
 #include <stdint.h>
@@ -32,8 +33,6 @@ HOST_DATA static u32 sNextHostFunctionHandle = 1;
 HOST_DATA static struct HostPersistentFunctionEntry sPersistentFunctions[HOST_PERSISTENT_FUNCTION_CAPACITY];
 HOST_DATA static u32 sPersistentFunctionCount;
 
-extern unsigned char __executable_start[];
-extern unsigned char _end[];
 extern unsigned char __start_host_data[];
 extern unsigned char __stop_host_data[];
 #endif
@@ -51,39 +50,19 @@ static void HostMemoryAbort(const char *message, uintptr_t addr)
 #if defined(LINUX64) && LINUX64
 static bool32 HostIsGameImageAddress(uintptr_t native)
 {
-    return native >= (uintptr_t)__executable_start
-        && native < (uintptr_t)_end
+    uintptr_t imageStart;
+    uintptr_t imageEnd;
+
+    return Platform_RuntimeGetImageRange(&imageStart, &imageEnd)
+        && native >= imageStart
+        && native < imageEnd
         && !(native >= (uintptr_t)__start_host_data
           && native < (uintptr_t)__stop_host_data);
 }
 
 static bool32 HostIsExecutableAddress(uintptr_t native)
 {
-#if defined(__linux__)
-    FILE *maps = fopen("/proc/self/maps", "r");
-    char line[256];
-
-    if (maps == NULL)
-        return FALSE;
-    while (fgets(line, sizeof(line), maps) != NULL)
-    {
-        unsigned long begin;
-        unsigned long end;
-        char permissions[5];
-
-        if (sscanf(line, "%lx-%lx %4s", &begin, &end, permissions) == 3
-         && native >= (uintptr_t)begin && native < (uintptr_t)end)
-        {
-            bool32 executable = permissions[2] == 'x';
-            fclose(maps);
-            return executable;
-        }
-    }
-    fclose(maps);
-    return FALSE;
-#else
-    return HostIsGameImageAddress(native);
-#endif
+    return Platform_RuntimeAddressIsExecutable(native);
 }
 
 static bool32 HostRegisterPersistentFunction(u32 stableId, uintptr_t native)
@@ -117,10 +96,15 @@ bool32 HostPointerToPersistentAddress(const void *ptr, struct HostPersistentAddr
     if (ptr == NULL)
         return TRUE;
 #if defined(LINUX64) && LINUX64
-    if (!HostIsGameImageAddress(native) || HostIsExecutableAddress(native)
-     || native - (uintptr_t)__executable_start > UINT32_MAX)
+    uintptr_t imageStart;
+    uintptr_t imageEnd;
+
+    if (!Platform_RuntimeGetImageRange(&imageStart, &imageEnd)
+     || !HostIsGameImageAddress(native) || HostIsExecutableAddress(native)
+     || native < imageStart
+     || native - imageStart > UINT32_MAX)
         return FALSE;
-    persistent->value = (u32)(native - (uintptr_t)__executable_start);
+    persistent->value = (u32)(native - imageStart);
     persistent->kind = HOST_PERSISTENT_DATA_IMAGE;
     return TRUE;
 #else
@@ -144,11 +128,15 @@ bool32 HostResolvePersistentAddress(const struct HostPersistentAddress *persiste
         return TRUE;
     }
 #if defined(LINUX64) && LINUX64
+    uintptr_t imageStart;
+    uintptr_t imageEnd;
+
     if (persistent->kind == HOST_PERSISTENT_DATA_LOGICAL)
         native = persistent->value;
     else if (persistent->kind == HOST_PERSISTENT_DATA_IMAGE
-          && persistent->value <= UINTPTR_MAX - (uintptr_t)__executable_start)
-        native = (uintptr_t)__executable_start + persistent->value;
+          && Platform_RuntimeGetImageRange(&imageStart, &imageEnd)
+          && persistent->value <= UINTPTR_MAX - imageStart)
+        native = imageStart + persistent->value;
     else
         return FALSE;
     if (!HostIsGameImageAddress(native) || HostIsExecutableAddress(native))
@@ -184,10 +172,14 @@ bool32 HostFunctionToPersistentAddress(const void *functionPointerBytes, size_t 
     if (native == 0)
         return TRUE;
 #if defined(LINUX64) && LINUX64
+    uintptr_t imageStart;
+    uintptr_t imageEnd;
+
     if (!HostIsGameImageAddress(native) || !HostIsExecutableAddress(native)
-     || native - (uintptr_t)__executable_start > UINT32_MAX)
+     || !Platform_RuntimeGetImageRange(&imageStart, &imageEnd)
+     || native < imageStart || native - imageStart > UINT32_MAX)
         return FALSE;
-    persistent->value = (u32)(native - (uintptr_t)__executable_start);
+    persistent->value = (u32)(native - imageStart);
     persistent->kind = HOST_PERSISTENT_FUNC_IMAGE;
     return HostRegisterPersistentFunction(persistent->value, native);
 #else
@@ -213,11 +205,15 @@ bool32 HostResolvePersistentFunction(const struct HostPersistentAddress *persist
         return TRUE;
     }
 #if defined(LINUX64) && LINUX64
+    uintptr_t imageStart;
+    uintptr_t imageEnd;
+
     if (persistent->kind == HOST_PERSISTENT_FUNC_LOGICAL)
         native = persistent->value;
     else if (persistent->kind == HOST_PERSISTENT_FUNC_IMAGE
-          && persistent->value <= UINTPTR_MAX - (uintptr_t)__executable_start)
-        native = (uintptr_t)__executable_start + persistent->value;
+          && Platform_RuntimeGetImageRange(&imageStart, &imageEnd)
+          && persistent->value <= UINTPTR_MAX - imageStart)
+        native = imageStart + persistent->value;
     else
         return FALSE;
     if (!HostIsGameImageAddress(native) || !HostIsExecutableAddress(native)

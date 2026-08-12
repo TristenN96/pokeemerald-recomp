@@ -1,3 +1,4 @@
+#ifndef DESKTOP_EXTERNAL_GAME_CONTENT
 #define SQUARE(n) ((n) * (n))
 #define CUBE(n) ((n) * (n) * (n))
 
@@ -842,3 +843,4 @@ const u32 gExperienceTables[][MAX_LEVEL + 1] =
         EXP_MEDIUM_FAST(100),
     }
 };
+#endif
