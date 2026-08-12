@@ -136,7 +136,12 @@ extern const struct CompressedSpriteSheet gMonFrontPicTable[];
 
 extern const struct Trainer gTrainers[];
 extern const u8 gTrainerClassNames[][13];
+#ifdef DESKTOP_EXTERNAL_GAME_CONTENT
+extern u8 gSpeciesNames[][POKEMON_NAME_LENGTH + 1];
+extern u8 gMoveNames[MOVES_COUNT][MOVE_NAME_LENGTH + 1];
+#else
 extern const u8 gSpeciesNames[][POKEMON_NAME_LENGTH + 1];
 extern const u8 gMoveNames[MOVES_COUNT][MOVE_NAME_LENGTH + 1];
+#endif
 
 #endif // GUARD_DATA_H

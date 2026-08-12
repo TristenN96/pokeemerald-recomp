@@ -18,7 +18,11 @@
 		.global voicegroup_\label 
 		voicegroup_\label:
 	.else
-		.set voicegroup_\label, . - \starting_note * 0xC
+		.if LINUX64
+			.set voicegroup_\label, . - \starting_note * 0x18
+		.else
+			.set voicegroup_\label, . - \starting_note * 0xC
+		.endif
 	.endif
 	.endm
 

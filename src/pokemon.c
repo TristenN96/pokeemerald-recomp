@@ -6741,14 +6741,15 @@ const u8 *GetTrainerPartnerName(void)
 }
 
 #define READ_PTR_FROM_TASK(taskId, dataId)                      \
-    (void *)(                                                   \
+    HostResolveGbaAddr(                                           \
     ((u16)(gTasks[taskId].data[dataId]) |                       \
     ((u16)(gTasks[taskId].data[dataId + 1]) << 16)))
 
 #define STORE_PTR_IN_TASK(ptr, taskId, dataId)                 \
 {                                                              \
-    gTasks[taskId].data[dataId] = (u32)(ptr);                  \
-    gTasks[taskId].data[dataId + 1] = (u32)(ptr) >> 16;        \
+    GbaAddr ptrAddr = HostPointerToGbaAddr(ptr);               \
+    gTasks[taskId].data[dataId] = ptrAddr;                      \
+    gTasks[taskId].data[dataId + 1] = ptrAddr >> 16;            \
 }
 
 #define sAnimId    data[2]

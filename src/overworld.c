@@ -489,7 +489,7 @@ void LoadSaveblockObjEventScripts(void)
 #endif
     {
         for (i = 0; i < OBJECT_EVENT_TEMPLATES_COUNT; i++)
-            savObjTemplates[i].script = mapHeaderObjTemplates[i].script;
+            ObjectEventTemplate_SetScript(&savObjTemplates[i], ObjectEventTemplate_GetScript(&mapHeaderObjTemplates[i]));
     }
 }
 

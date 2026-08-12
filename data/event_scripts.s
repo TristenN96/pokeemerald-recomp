@@ -63,44 +63,52 @@
 	.set ALLOCATE_SCRIPT_CMD_TABLE, 1
 	.include "data/script_cmd_table.inc"
 
+	.macro host_pointer_entry value
+	.if LINUX64
+	.quad \value
+	.else
+	.int \value
+	.endif
+	.endm
+
 gSpecialVars::
-	.int gSpecialVar_0x8000
-	.int gSpecialVar_0x8001
-	.int gSpecialVar_0x8002
-	.int gSpecialVar_0x8003
-	.int gSpecialVar_0x8004
-	.int gSpecialVar_0x8005
-	.int gSpecialVar_0x8006
-	.int gSpecialVar_0x8007
-	.int gSpecialVar_0x8008
-	.int gSpecialVar_0x8009
-	.int gSpecialVar_0x800A
-	.int gSpecialVar_0x800B
-	.int gSpecialVar_Facing
-	.int gSpecialVar_Result
-	.int gSpecialVar_ItemId
-	.int gSpecialVar_LastTalked
-	.int gSpecialVar_ContestRank
-	.int gSpecialVar_ContestCategory
-	.int gSpecialVar_MonBoxId
-	.int gSpecialVar_MonBoxPos
-	.int gSpecialVar_Unused_0x8014
-	.int gTrainerBattleOpponent_A
+	host_pointer_entry gSpecialVar_0x8000
+	host_pointer_entry gSpecialVar_0x8001
+	host_pointer_entry gSpecialVar_0x8002
+	host_pointer_entry gSpecialVar_0x8003
+	host_pointer_entry gSpecialVar_0x8004
+	host_pointer_entry gSpecialVar_0x8005
+	host_pointer_entry gSpecialVar_0x8006
+	host_pointer_entry gSpecialVar_0x8007
+	host_pointer_entry gSpecialVar_0x8008
+	host_pointer_entry gSpecialVar_0x8009
+	host_pointer_entry gSpecialVar_0x800A
+	host_pointer_entry gSpecialVar_0x800B
+	host_pointer_entry gSpecialVar_Facing
+	host_pointer_entry gSpecialVar_Result
+	host_pointer_entry gSpecialVar_ItemId
+	host_pointer_entry gSpecialVar_LastTalked
+	host_pointer_entry gSpecialVar_ContestRank
+	host_pointer_entry gSpecialVar_ContestCategory
+	host_pointer_entry gSpecialVar_MonBoxId
+	host_pointer_entry gSpecialVar_MonBoxPos
+	host_pointer_entry gSpecialVar_Unused_0x8014
+	host_pointer_entry gTrainerBattleOpponent_A
 
 	.include "data/specials.inc"
 
 gStdScripts::
-	.int Std_ObtainItem              /* STD_OBTAIN_ITEM*/
-	.int Std_FindItem                /* STD_FIND_ITEM*/
-	.int Std_MsgboxNPC               /* MSGBOX_NPC*/
-	.int Std_MsgboxSign              /* MSGBOX_SIGN*/
-	.int Std_MsgboxDefault           /* MSGBOX_DEFAULT*/
-	.int Std_MsgboxYesNo             /* MSGBOX_YESNO*/
-	.int Std_MsgboxAutoclose         /* MSGBOX_AUTOCLOSE*/
-	.int Std_ObtainDecoration        /* STD_OBTAIN_DECORATION*/
-	.int Std_RegisteredInMatchCall   /* STD_REGISTER_MATCH_CALL*/
-	.int Std_MsgboxGetPoints         /* MSGBOX_GETPOINTS*/
-	.int Std_MsgboxPokenav           /* MSGBOX_POKENAV*/
+	host_pointer_entry Std_ObtainItem              /* STD_OBTAIN_ITEM*/
+	host_pointer_entry Std_FindItem                /* STD_FIND_ITEM*/
+	host_pointer_entry Std_MsgboxNPC               /* MSGBOX_NPC*/
+	host_pointer_entry Std_MsgboxSign              /* MSGBOX_SIGN*/
+	host_pointer_entry Std_MsgboxDefault           /* MSGBOX_DEFAULT*/
+	host_pointer_entry Std_MsgboxYesNo             /* MSGBOX_YESNO*/
+	host_pointer_entry Std_MsgboxAutoclose         /* MSGBOX_AUTOCLOSE*/
+	host_pointer_entry Std_ObtainDecoration        /* STD_OBTAIN_DECORATION*/
+	host_pointer_entry Std_RegisteredInMatchCall   /* STD_REGISTER_MATCH_CALL*/
+	host_pointer_entry Std_MsgboxGetPoints         /* MSGBOX_GETPOINTS*/
+	host_pointer_entry Std_MsgboxPokenav           /* MSGBOX_POKENAV*/
 gStdScripts_End::
 
 	.include "data/maps/PetalburgCity/scripts.inc"

@@ -140,23 +140,23 @@ string generate_map_header_text(Json map_data, Json layouts_data) {
     text << get_generated_warning("data/maps/" + mapName + "/map.json", true);
 
     text << mapName << ":\n"
-         << "\t.4byte " << json_to_string(layout, "name") << "\n";
+         << "\thost_ptr " << json_to_string(layout, "name") << "\n";
 
     if (map_data.object_items().find("shared_events_map") != map_data.object_items().end())
-        text << "\t.4byte " << json_to_string(map_data, "shared_events_map") << "_MapEvents\n";
+        text << "\thost_ptr " << json_to_string(map_data, "shared_events_map") << "_MapEvents\n";
     else
-        text << "\t.4byte " << mapName << "_MapEvents\n";
+        text << "\thost_ptr " << mapName << "_MapEvents\n";
 
     if (map_data.object_items().find("shared_scripts_map") != map_data.object_items().end())
-        text << "\t.4byte " << json_to_string(map_data, "shared_scripts_map") << "_MapScripts\n";
+        text << "\thost_ptr " << json_to_string(map_data, "shared_scripts_map") << "_MapScripts\n";
     else
-        text << "\t.4byte " << mapName << "_MapScripts\n";
+        text << "\thost_ptr " << mapName << "_MapScripts\n";
 
     if (map_data.object_items().find("connections") != map_data.object_items().end()
      && map_data["connections"].array_items().size() > 0 && json_to_string(map_data, "connections_no_include", true) != "TRUE")
-        text << "\t.4byte " << mapName << "_MapConnections\n";
+        text << "\thost_ptr " << mapName << "_MapConnections\n";
     else
-        text << "\t.4byte NULL\n";
+        text << "\thost_ptr NULL\n";
 
     text << "\t.2byte " << json_to_string(map_data, "music") << "\n"
          << "\t.2byte " << json_to_string(layout, "id") << "\n"
@@ -204,7 +204,8 @@ string generate_map_connections_text(Json map_data) {
 
     text << "\n" << mapName << "_MapConnections:\n"
          << "\t.4byte " << map_data["connections"].array_items().size() << "\n"
-         << "\t.4byte " << mapName << "_MapConnectionsList\n\n";
+         << "\t.if LINUX64\n\t.space 4\n\t.endif\n"
+         << "\thost_ptr " << mapName << "_MapConnectionsList\n\n";
 
     return text.str();
 }
@@ -443,13 +444,13 @@ string generate_groups_text(Json groups_data) {
         text << group << "::\n";
         auto maps = groups_data[group].array_items();
         for (Json &map_name : maps)
-            text << "\t.4byte " << json_to_string(map_name) << "\n";
+            text << "\thost_ptr " << json_to_string(map_name) << "\n";
         text << "\n";
     }
 
     text << "\t.align 2\n" << "gMapGroups::\n";
     for (auto &group : groups_data["group_order"].array_items())
-        text << "\t.4byte " << json_to_string(group) << "\n";
+        text << "\thost_ptr " << json_to_string(group) << "\n";
     text << "\n";
 
     return text.str();
@@ -604,10 +605,10 @@ string generate_layout_headers_text(Json layouts_data) {
              << layoutName << "::\n"
              << "\t.4byte " << json_to_string(layout, "width") << "\n"
              << "\t.4byte " << json_to_string(layout, "height") << "\n"
-             << "\t.4byte " << border_label << "\n"
-             << "\t.4byte " << blockdata_label << "\n"
-             << "\t.4byte " << json_to_string(layout, "primary_tileset") << "\n"
-             << "\t.4byte " << json_to_string(layout, "secondary_tileset") << "\n";
+             << "\thost_ptr " << border_label << "\n"
+             << "\thost_ptr " << blockdata_label << "\n"
+             << "\thost_ptr " << json_to_string(layout, "primary_tileset") << "\n"
+             << "\thost_ptr " << json_to_string(layout, "secondary_tileset") << "\n";
         if (version == "firered") {
             text << "\t.byte " << json_to_string(layout, "border_width") << "\n"
                  << "\t.byte " << json_to_string(layout, "border_height") << "\n"
@@ -630,7 +631,7 @@ string generate_layouts_table_text(Json layouts_data) {
     for (auto &layout : layouts_data["layouts"].array_items()) {
         string layout_name = json_to_string(layout, "name", true);
         if (layout_name.empty()) layout_name = "NULL";
-        text << "\t.4byte " << layout_name << "\n";
+        text << "\thost_ptr " << layout_name << "\n";
     }
 
     return text.str();

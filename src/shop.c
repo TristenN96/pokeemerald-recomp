@@ -416,8 +416,9 @@ static void Task_ShopMenu(u8 taskId)
 static void Task_HandleShopMenuBuy(u8 taskId)
 {
     s16 *data = gTasks[taskId].data;
-    tCallbackHi = (u32)CB2_InitBuyMenu >> 16;
-    tCallbackLo = (u32)CB2_InitBuyMenu;
+    GbaAddr callbackAddr = HOST_FUNCTION_ADDR(CB2_InitBuyMenu);
+    tCallbackHi = callbackAddr >> 16;
+    tCallbackLo = callbackAddr;
     gTasks[taskId].func = Task_GoToBuyOrSellMenu;
     FadeScreen(FADE_TO_BLACK, 0);
 }
@@ -425,8 +426,9 @@ static void Task_HandleShopMenuBuy(u8 taskId)
 static void Task_HandleShopMenuSell(u8 taskId)
 {
     s16 *data = gTasks[taskId].data;
-    tCallbackHi = (u32)CB2_GoToSellMenu >> 16;
-    tCallbackLo = (u32)CB2_GoToSellMenu;
+    GbaAddr callbackAddr = HOST_FUNCTION_ADDR(CB2_GoToSellMenu);
+    tCallbackHi = callbackAddr >> 16;
+    tCallbackLo = callbackAddr;
     gTasks[taskId].func = Task_GoToBuyOrSellMenu;
     FadeScreen(FADE_TO_BLACK, 0);
 }
@@ -454,8 +456,12 @@ static void Task_GoToBuyOrSellMenu(u8 taskId)
     s16 *data = gTasks[taskId].data;
     if (!gPaletteFade.active)
     {
+        MainCallback callback;
+        GbaAddr callbackAddr = (u16)tCallbackHi << 16 | (u16)tCallbackLo;
+
         DestroyTask(taskId);
-        SetMainCallback2((void *)((u16)tCallbackHi << 16 | (u16)tCallbackLo));
+        HostResolveFunction(callbackAddr, &callback, sizeof(callback));
+        SetMainCallback2(callback);
     }
 }
 

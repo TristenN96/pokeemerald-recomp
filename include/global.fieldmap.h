@@ -95,10 +95,33 @@ struct ObjectEventTemplate
              //u16 padding2:8;
     /*0x0C*/ u16 trainerType;
     /*0x0E*/ u16 trainerRange_berryTreeId;
-    /*0x10*/ const u8 *script;
+    /*0x10*/
+#if defined(LINUX64) && LINUX64
+             GbaAddr script;
+#else
+             const u8 *script;
+#endif
     /*0x14*/ u16 flagId;
     /*0x16*/ //u8 padding3[2];
 };
+
+static inline const u8 *ObjectEventTemplate_GetScript(const struct ObjectEventTemplate *template)
+{
+#if defined(LINUX64) && LINUX64
+    return (const u8 *)HostResolveGbaAddr(template->script);
+#else
+    return template->script;
+#endif
+}
+
+static inline void ObjectEventTemplate_SetScript(struct ObjectEventTemplate *template, const u8 *script)
+{
+#if defined(LINUX64) && LINUX64
+    template->script = HostPointerToGbaAddr(script);
+#else
+    template->script = script;
+#endif
+}
 
 struct WarpEvent
 {
@@ -180,6 +203,23 @@ struct MapHeader
                                     // but the 5 bit sized bitfield is required to match
     /* 0x1B */ u8 battleType;
 };
+
+// These are GBA-shaped records consumed by both the save/map data contract
+// and the native host hydration layer. Pointer-bearing map records are
+// asserted separately by the generated-data macros; these sizes must remain
+// stable across host widths.
+STATIC_ASSERT(sizeof(struct ObjectEventTemplate) == 0x18, ObjectEventTemplateSize);
+STATIC_ASSERT(sizeof(struct WarpEvent) == 0x08, WarpEventSize);
+STATIC_ASSERT(sizeof(struct MapConnection) == 0x0C, MapConnectionSize);
+#if defined(LINUX64) && LINUX64
+STATIC_ASSERT(sizeof(struct CoordEvent) == 0x18, CoordEventNativeSize);
+STATIC_ASSERT(sizeof(struct BgEvent) == 0x10, BgEventNativeSize);
+STATIC_ASSERT(sizeof(struct MapEvents) == 0x28, MapEventsNativeSize);
+#else
+STATIC_ASSERT(sizeof(struct CoordEvent) == 0x10, CoordEventSize);
+STATIC_ASSERT(sizeof(struct BgEvent) == 0x0C, BgEventSize);
+STATIC_ASSERT(sizeof(struct MapEvents) == 0x14, MapEventsSize);
+#endif
 
 
 struct ObjectEvent

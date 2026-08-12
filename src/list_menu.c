@@ -889,7 +889,7 @@ s32 ListMenuGetTemplateField(u8 taskId, u8 field)
     {
     case LISTFIELD_MOVECURSORFUNC:
     case LISTFIELD_MOVECURSORFUNC2:
-        return (s32)(data->template.moveCursorFunc);
+        return (s32)HostFunctionToGbaAddr(&data->template.moveCursorFunc, sizeof(data->template.moveCursorFunc));
     case LISTFIELD_TOTALITEMS:
         return data->template.totalItems;
     case LISTFIELD_MAXSHOWED:
@@ -933,7 +933,7 @@ void ListMenuSetTemplateField(u8 taskId, u8 field, s32 value)
     {
     case LISTFIELD_MOVECURSORFUNC:
     case LISTFIELD_MOVECURSORFUNC2:
-        data->template.moveCursorFunc = (void *)value;
+        HostResolveFunction((GbaAddr)(u32)value, &data->template.moveCursorFunc, sizeof(data->template.moveCursorFunc));
         break;
     case LISTFIELD_TOTALITEMS:
         data->template.totalItems = value;

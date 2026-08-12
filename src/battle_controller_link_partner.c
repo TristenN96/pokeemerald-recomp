@@ -448,8 +448,8 @@ static void LinkPartnerHandleGetMonData(void)
 
 static u32 CopyLinkPartnerMonData(u8 monId, u8 *dst)
 {
-    struct BattlePokemon battleMon;
-    struct MovePpInfo moveData;
+    struct BattlePokemon battleMon = {0};
+    struct MovePpInfo moveData = {0};
     u8 nickname[POKEMON_NAME_BUFFER_SIZE];
     u8 *src;
     s16 data16;

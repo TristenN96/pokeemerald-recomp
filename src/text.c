@@ -35,8 +35,36 @@ static u32 GetGlyphWidth_Short(u16, bool32);
 static u32 GetGlyphWidth_Narrow(u16, bool32);
 static u32 GetGlyphWidth_SmallNarrow(u16, bool32);
 
+#if defined(LINUX64) && LINUX64
+/* AddTextPrinter uses this only while the game thread is running. Save-state
+ * capture happens with that thread blocked at VBlank, so this builder has no
+ * continuation state. Synchronous rendering can leave currentChar one byte
+ * past caller-owned text storage, so keep the scratch object host-only. */
+static HOST_DATA struct TextPrinter sTempTextPrinter = {0};
+#else
 static EWRAM_DATA struct TextPrinter sTempTextPrinter = {0};
+#endif
 static EWRAM_DATA struct TextPrinter sTextPrinters[WINDOWS_MAX] = {0};
+
+static void DeactivateTextPrinter(u8 printer)
+{
+    /* Inactive printers have no continuation. Clear stale source and callback
+     * references before they can become logical save-state roots. */
+    sTextPrinters[printer].printerTemplate.currentChar = NULL;
+    sTextPrinters[printer].callback = NULL;
+    sTextPrinters[printer].active = FALSE;
+}
+
+#if defined(LINUX64) && LINUX64
+const struct TextPrinter *TextPrinter_GetStatePrinters(void)
+{
+    return sTextPrinters;
+}
+
+void TextPrinter_DumpStateEvents(void)
+{
+}
+#endif
 
 static u16 sFontHalfRowLookupTable[0x51];
 static u16 sLastTextBgColor;
@@ -245,7 +273,7 @@ void DeactivateAllTextPrinters(void)
 {
     int printer;
     for (printer = 0; printer < WINDOWS_MAX; ++printer)
-        sTextPrinters[printer].active = FALSE;
+        DeactivateTextPrinter(printer);
 }
 
 u16 AddTextPrinterParameterized(u8 windowId, u8 fontId, const u8 *str, u8 x, u8 y, u8 speed, void (*callback)(struct TextPrinterTemplate *, u16))
@@ -310,7 +338,7 @@ bool16 AddTextPrinter(struct TextPrinterTemplate *printerTemplate, u8 speed, voi
         // All the text is rendered to the window but don't draw it yet.
         if (speed != TEXT_SKIP_DRAW)
             CopyWindowToVram(sTempTextPrinter.printerTemplate.windowId, COPYWIN_GFX);
-        sTextPrinters[printerTemplate->windowId].active = FALSE;
+        DeactivateTextPrinter(printerTemplate->windowId);
     }
     gDisableTextPrinters = FALSE;
     return TRUE;
@@ -336,7 +364,7 @@ void RunTextPrinters(void)
                         sTextPrinters[i].callback(&sTextPrinters[i].printerTemplate, renderCmd);
                     break;
                 case RENDER_FINISH:
-                    sTextPrinters[i].active = FALSE;
+                    DeactivateTextPrinter(i);
                     break;
                 }
             }

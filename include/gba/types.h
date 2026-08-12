@@ -12,6 +12,11 @@ typedef int16_t  s16;
 typedef int32_t  s32;
 typedef int64_t  s64;
 
+// Addresses in the GBA-shaped data model are values, not host pointers.
+// Keep these aliases fixed-width even when the native host is LP64.
+typedef u32 GbaAddr;
+typedef u32 GbaOffset;
+
 typedef volatile u8   vu8;
 typedef volatile u16 vu16;
 typedef volatile u32 vu32;

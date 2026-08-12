@@ -1,6 +1,10 @@
 #include "global.h"
 
+#ifdef DESKTOP_EXTERNAL_GAME_CONTENT
+ALIGNED(4) HOST_DATA u16 gFontSmallNarrowLatinGlyphs[16384];
+#else
 ALIGNED(4) const u16 gFontSmallNarrowLatinGlyphs[] = INCBIN_U16("graphics/fonts/small_narrow.latfont");
+#endif
 ALIGNED(4) const u8 gFontSmallNarrowLatinGlyphWidths[] = {
     3,  5,  5,  5,  5,  5,  5,  5,  5,  4,  3,  4,  4,  5,  5,  5,
     5,  5,  5,  5,  5,  5,  5,  5,  3,  4,  5,  5,  5,  5,  4,  3,
@@ -36,7 +40,11 @@ ALIGNED(4) const u8 gFontSmallNarrowLatinGlyphWidths[] = {
     8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  3,
 };
 
+#ifdef DESKTOP_EXTERNAL_GAME_CONTENT
+ALIGNED(4) HOST_DATA u16 gFontSmallLatinGlyphs[16384];
+#else
 ALIGNED(4) const u16 gFontSmallLatinGlyphs[] = INCBIN_U16("graphics/fonts/small.latfont");
+#endif
 ALIGNED(4) const u8 gFontSmallLatinGlyphWidths[] = {
     3,  5,  5,  5,  5,  5,  5,  5,  5,  4,  3,  4,  4,  5,  5,  5,
     5,  5,  5,  5,  5,  5,  5,  5,  3,  5,  5,  5,  5,  5,  4,  3,
@@ -72,7 +80,11 @@ ALIGNED(4) const u8 gFontSmallLatinGlyphWidths[] = {
     8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  3,
 };
 
+#ifdef DESKTOP_EXTERNAL_GAME_CONTENT
+ALIGNED(4) HOST_DATA u16 gFontNarrowLatinGlyphs[16384];
+#else
 ALIGNED(4) const u16 gFontNarrowLatinGlyphs[] = INCBIN_U16("graphics/fonts/narrow.latfont");
+#endif
 ALIGNED(4) const u8 gFontNarrowLatinGlyphWidths[] = {
     3,  5,  5,  5,  5,  5,  5,  5,  5,  4,  3,  4,  4,  5,  5,  5,
     8,  5,  5,  5,  5,  6,  5,  5,  3,  5,  5,  5,  5,  5,  4,  3,
@@ -108,7 +120,11 @@ ALIGNED(4) const u8 gFontNarrowLatinGlyphWidths[] = {
     8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  3,
 };
 
+#ifdef DESKTOP_EXTERNAL_GAME_CONTENT
+ALIGNED(4) HOST_DATA u16 gFontShortLatinGlyphs[16384];
+#else
 ALIGNED(4) const u16 gFontShortLatinGlyphs[] = INCBIN_U16("graphics/fonts/short.latfont");
+#endif
 ALIGNED(4) const u8 gFontShortLatinGlyphWidths[] = {
     3,  6,  6,  6,  6,  6,  6,  6,  6,  6,  3,  6,  6,  6,  6,  6,
     8,  6,  6,  6,  6,  6,  6,  6,  3,  6,  6,  6,  6,  6,  6,  3,
@@ -144,7 +160,11 @@ ALIGNED(4) const u8 gFontShortLatinGlyphWidths[] = {
     8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  3,
 };
 
+#ifdef DESKTOP_EXTERNAL_GAME_CONTENT
+ALIGNED(4) HOST_DATA u16 gFontNormalLatinGlyphs[16384];
+#else
 ALIGNED(4) const u16 gFontNormalLatinGlyphs[] = INCBIN_U16("graphics/fonts/normal.latfont");
+#endif
 ALIGNED(4) const u8 gFontNormalLatinGlyphWidths[] = {
     3,  6,  6,  6,  6,  6,  6,  6,  6,  6,  3,  6,  6,  6,  6,  6,
     8,  6,  6,  6,  6,  6,  6,  6,  3,  6,  6,  6,  6,  6,  6,  3,
@@ -180,10 +200,19 @@ ALIGNED(4) const u8 gFontNormalLatinGlyphWidths[] = {
     8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  3,
 };
 
+#ifdef DESKTOP_EXTERNAL_GAME_CONTENT
+ALIGNED(4) HOST_DATA u16 gFontSmallJapaneseGlyphs[8192];
+ALIGNED(4) HOST_DATA u16 gFontNormalJapaneseGlyphs[8192];
+#else
 ALIGNED(4) const u16 gFontSmallJapaneseGlyphs[] = INCBIN_U16("graphics/fonts/small.hwjpnfont");
 ALIGNED(4) const u16 gFontNormalJapaneseGlyphs[] = INCBIN_U16("graphics/fonts/normal.hwjpnfont");
+#endif
 
+#ifdef DESKTOP_EXTERNAL_GAME_CONTENT
+ALIGNED(4) HOST_DATA u16 gFontFRLGMaleJapaneseGlyphs[16384];
+#else
 ALIGNED(4) const u16 gFontFRLGMaleJapaneseGlyphs[] = INCBIN_U16("graphics/fonts/frlg_male.fwjpnfont");
+#endif
 ALIGNED(4) const u8 gFontFRLGMaleJapaneseGlyphWidths[] = {
     0, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10,
     10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10,
@@ -219,7 +248,11 @@ ALIGNED(4) const u8 gFontFRLGMaleJapaneseGlyphWidths[] = {
     10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10,
 };
 
+#ifdef DESKTOP_EXTERNAL_GAME_CONTENT
+ALIGNED(4) HOST_DATA u16 gFontFRLGFemaleJapaneseGlyphs[16384];
+#else
 ALIGNED(4) const u16 gFontFRLGFemaleJapaneseGlyphs[] = INCBIN_U16("graphics/fonts/frlg_female.fwjpnfont");
+#endif
 ALIGNED(4) const u8 gFontFRLGFemaleJapaneseGlyphWidths[] = {
     0, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10,
     10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10,
@@ -255,7 +288,11 @@ ALIGNED(4) const u8 gFontFRLGFemaleJapaneseGlyphWidths[] = {
     10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10,
 };
 
+#ifdef DESKTOP_EXTERNAL_GAME_CONTENT
+ALIGNED(4) HOST_DATA u16 gFontShortJapaneseGlyphs[16384];
+#else
 ALIGNED(4) const u16 gFontShortJapaneseGlyphs[] = INCBIN_U16("graphics/fonts/short.fwjpnfont");
+#endif
 ALIGNED(4) const u8 gFontShortJapaneseGlyphWidths[] = {
     10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10,
     10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10,

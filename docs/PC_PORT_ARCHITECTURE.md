@@ -1,6 +1,8 @@
 # Native PC port architecture audit
 
-Status: repository audit performed 2026-08-09. No game code was changed as part of this audit.
+Status: repository audit performed 2026-08-09; Phase 1 implementation discoveries
+recorded 2026-08-10. The audit remains authoritative for scope: no mod loading or
+runtime content externalization is part of Phase 1.
 
 ## Executive summary
 
@@ -605,3 +607,46 @@ after validation and hydration.
 | Core registries | `src/data/pokemon/species_info.h`, `src/data/battle_moves.h`, `src/data/items.h`, `src/data/trainers.h`, `src/data/wild_encounters.h`, `src/rom_header_gf.c`, `src/pokemon.c`, `src/item.c`, `src/battle_main.c`, `src/wild_encounter.c` |
 | Maps/scripts | `data/maps.s`, `data/map_events.s`, `data/event_scripts.s`, `data/battle_scripts_*.s`, `asm/macros/event.inc`, `asm/macros/map.inc`, `src/overworld.c`, `src/scrcmd.c`, `src/map.c` |
 | Audio/assets | `audio_rules.mk`, `sound/songs`, `sound/songs/midi`, `src/m4a.c`, `src/m4a_tables.c`, `src/music_player.c`, `graphics_file_rules.mk`, `src/graphics.c` and `INCBIN_*` users |
+
+## Phase 1 implementation discoveries
+
+The first native x86_64 build refined several audit assumptions:
+
+- `GbaAddr` and `GbaOffset` are logical four-byte values, not aliases for
+  `uintptr_t`. Host pointers remain typed pointers or are represented by the
+  short-lived registries in `include/platform/host_memory.h`. The handle ranges are
+  deliberately reserved for transient pointer and function references; they are not
+  a general object/plugin ABI.
+- Portable VRAM and DMA need a resolver boundary. DMA register mirrors continue to
+  hold logical values, while host transfers resolve those values and validate the
+  emulated memory ranges. The portable VRAM macro therefore cannot cast a host
+  pointer through `u32`.
+- Task, sprite, field-effect, animation, menu, and minigame callback storage cannot
+  be widened without changing vanilla-shaped data. The implementation uses typed
+  sidecars/handles at the affected call sites and retains the visible task/sprite
+  bytes.
+- Map event/template pointer fields are a special case: their surrounding map data
+  contains scalar four-byte GBA operands and four-byte counts. Object-event script
+  fields remain logical four-byte values with accessors; runtime-native coordinate,
+  sign, and background pointer records use explicit native-width entries and padding
+  assertions. A global `.4byte` to `.quad` conversion would corrupt map/script
+  scalar streams.
+- The generated script-command and mystery-event command tables contain native
+  function pointers and need native-width entries on Linux64. Script bytecode branch,
+  message, movement, and data operands remain four-byte logical operands and are
+  resolved by `scrcmd.c`.
+- `gSpecialVars`, `gSpecials`, and `gStdScripts` are pointer tables rather than
+  bytecode. They also need native-width Linux64 entries; the failure mode was a
+  truncated special-variable pointer during the first truck/overworld script.
+- Pokémon cry `GOTO` operands are authored four-byte bytecode data. Storing that
+  field as a native pointer inserted compiler padding and shifted the following
+  command stream, so it remains `GbaAddr` and is hydrated when the cry song is
+  initialized.
+- M4A voice groups have a native pointer-bearing layout on Linux64 and are parsed
+  with an explicit stride. `Song`, `MusicPlayer`, and mixer state retain fixed GBA
+  sizes/offsets where the vanilla runtime depends on them; static assertions cover
+  those contracts.
+- The Linux64 target is a non-PIE SDL2 executable in `build/linux64` and uses the
+  native assembler width. The existing i386 target remains `build/linux` and keeps
+  its `-m32`/`--32` path. Makefile compiler-version probing is no longer evaluated
+  through the MinGW compiler for native Linux builds.

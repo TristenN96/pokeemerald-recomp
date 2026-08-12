@@ -545,7 +545,7 @@ bool8 SetWindowAttribute(u8 windowId, u8 attributeId, u32 value)
         gWindows[windowId].window.baseBlock = value;
         return FALSE;
     case WINDOW_TILE_DATA:
-        gWindows[windowId].tileData = (u8 *)(value);
+        gWindows[windowId].tileData = HostResolveGbaAddr(value);
         return TRUE;
     case WINDOW_BG:
     case WINDOW_WIDTH:
@@ -574,7 +574,7 @@ u32 GetWindowAttribute(u8 windowId, u8 attributeId)
     case WINDOW_BASE_BLOCK:
         return gWindows[windowId].window.baseBlock;
     case WINDOW_TILE_DATA:
-        return (u32)(gWindows[windowId].tileData);
+        return HostPointerToGbaAddr(gWindows[windowId].tileData);
     default:
         return 0;
     }

@@ -5267,19 +5267,19 @@ void SetSearchRectHighlight(u8 flags, u8 x, u8 y, u8 width)
 {
     u16 i;
     u16 temp; //should be a pointer, but does not match as one
-    u32 ptr = (u32)GetBgTilemapBuffer(3); //same as above
+    u16 *tilemap = GetBgTilemapBuffer(3);
 
     for (i = 0; i < width; i++)
     {
-        temp = *(u16 *)(ptr + (y + 0) * 64 + (x + i) * 2);
+        temp = tilemap[(y + 0) * 32 + x + i];
         temp &= 0x0fff;
         temp |= (flags << 12);
-        *(u16 *)(ptr + (y + 0) * 64 + (x + i) * 2) = temp;
+        tilemap[(y + 0) * 32 + x + i] = temp;
 
-        temp = *(u16 *)(ptr + (y + 1) * 64 + (x + i) * 2);
+        temp = tilemap[(y + 1) * 32 + x + i];
         temp &= 0x0fff;
         temp |= (flags << 12);
-        *(u16 *)(ptr + (y + 1) * 64 + (x + i) * 2) = temp;
+        tilemap[(y + 1) * 32 + x + i] = temp;
     }
 }
 

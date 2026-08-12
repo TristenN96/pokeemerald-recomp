@@ -1,5 +1,14 @@
 /* Most of the macros in this file are for arranging map event data, and are output by mapjson using data from each map's JSON file.*/
 
+	/* Native pointer fields use host width; scalar GBA operands remain .int. */
+	.macro host_ptr value:req
+	.if LINUX64
+		.quad \value
+	.else
+		.int \value
+	.endif
+	.endm
+
 	/* Takes a MAP constant and outputs the map group and map number as separate bytes*/
 	.macro map map_id:req
 	.byte \map_id >> 8    /* map group*/
@@ -72,7 +81,12 @@
 	.2byte \var
 	.2byte \varValue
 	.space 2  /* Padding*/
-	.4byte \script
+	.if LINUX64
+		.space 4  /* Align the native pointer after the fixed GBA fields. */
+		.quad \script
+	.else
+		.4byte \script
+	.endif
 	inc _num_traps
 	.endm
 
@@ -89,18 +103,40 @@
 	.byte \elevation
 	.byte \kind
 	.space 2  /* Padding*/
-	.if \kind != BG_EVENT_HIDDEN_ITEM
-		.int \arg6
+	.if LINUX64
+		.if \kind == BG_EVENT_HIDDEN_ITEM
+			.short \arg6
+			.short \arg7
+			.space 4  /* Keep the native union width. */
+		.elseif \kind == BG_EVENT_SECRET_BASE
+			.int \arg6
+			.space 4  /* Keep the native union width. */
+		.else
+			.quad \arg6
+		.endif
 	.else
+		.if \kind != BG_EVENT_HIDDEN_ITEM
+			.int \arg6
+		.else
 		.short \arg6
 		.short \arg7
+		.endif
 	.endif
 	inc _num_signs
 	.endm
 
 	/* Defines a background sign event for map data. 'facing_dir' is any of the BG_EVENT_PLAYER_FACING_* constants (see include/constants/event_bg.h)*/
 	.macro bg_sign_event x:req, y:req, elevation:req, facing_dir:req, script:req
-	bg_event \x, \y, \elevation, \facing_dir, \script
+	.short \x, \y
+	.byte \elevation
+	.byte \facing_dir
+	.space 2  /* Padding*/
+	.if LINUX64
+		.quad \script
+	.else
+		.int \script
+	.endif
+	inc _num_signs
 	.endm
 
 	/* Defines a background hidden item event for map data*/
@@ -116,7 +152,12 @@
 	/* Defines the table of event data for a map. Mirrors the struct layout of MapEvents in include/global.fieldmap.h*/
 	.macro map_events npcs:req, warps:req, traps:req, signs:req
 	.byte _num_npcs, _num_warps, _num_traps, _num_signs
-	.int \npcs, \warps, \traps, \signs
+	.if LINUX64
+		.space 4  /* Align the first native pointer after the four counts. */
+		.quad \npcs, \warps, \traps, \signs
+	.else
+		.int \npcs, \warps, \traps, \signs
+	.endif
 	reset_map_events
 	.endm
 

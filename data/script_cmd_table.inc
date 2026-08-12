@@ -2,7 +2,11 @@
 	.set SCRIPT_CMD_TABLE_ENTRY_MACRO, 1
 	.macro script_cmd_table_entry constant:req value:req
 	.if ALLOCATE_SCRIPT_CMD_TABLE
+	.if LINUX64
+	.quad \value
+	.else
 	.4byte \value
+	.endif
 	.else
 	enum \constant
 	.endif
@@ -245,5 +249,9 @@ gScriptCmdTable::
 
 	.if ALLOCATE_SCRIPT_CMD_TABLE
 gScriptCmdTableEnd::
+	.if LINUX64
+	.quad ScrCmd_nop
+	.else
 	.int ScrCmd_nop
+	.endif
 	.endif

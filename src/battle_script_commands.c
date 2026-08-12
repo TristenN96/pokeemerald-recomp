@@ -52,7 +52,7 @@
 #include "constants/songs.h"
 #include "constants/trainers.h"
 
-extern const u8 *const gBattleScriptsForMoveEffects[];
+extern const GbaAddr gBattleScriptsForMoveEffects[];
 
 #define DEFENDER_IS_PROTECTED ((gProtectStructs[gBattlerTarget].protected) && (gBattleMoves[gCurrentMove].flags & FLAG_PROTECT_AFFECTED))
 
@@ -4491,7 +4491,7 @@ static void Cmd_moveend(void)
                     gHitMarker |= HITMARKER_NO_ATTACKSTRING;
                     gBattleScripting.moveendState = 0;
                     MoveValuesCleanUp();
-                    BattleScriptPush(gBattleScriptsForMoveEffects[gBattleMoves[gCurrentMove].effect]);
+                    BattleScriptPush(HostResolveGbaAddr(gBattleScriptsForMoveEffects[gBattleMoves[gCurrentMove].effect]));
                     gBattlescriptCurrInstr = BattleScript_FlushMessageBox;
                     return;
                 }
@@ -5718,7 +5718,7 @@ static void Cmd_drawpartystatussummary(void)
 {
     s32 i;
     struct Pokemon *party;
-    struct HpAndStatus hpStatuses[PARTY_SIZE];
+    struct HpAndStatus hpStatuses[PARTY_SIZE] = {0};
 
     if (gBattleControllerExecFlags)
         return;
@@ -5767,7 +5767,7 @@ static void Cmd_jumptocalledmove(void)
     else
         gChosenMove = gCurrentMove = gCalledMove;
 
-    gBattlescriptCurrInstr = gBattleScriptsForMoveEffects[gBattleMoves[gCurrentMove].effect];
+    gBattlescriptCurrInstr = HostResolveGbaAddr(gBattleScriptsForMoveEffects[gBattleMoves[gCurrentMove].effect]);
 }
 
 static void Cmd_statusanimation(void)
@@ -6096,6 +6096,7 @@ static void DrawLevelUpBannerText(void)
     struct TextPrinterTemplate printerTemplate;
     u8 *txtPtr;
     u32 var;
+    uintptr_t stringAddress;
 
     monLevel = GetMonData(&gPlayerParty[gBattleStruct->expGetterMonId], MON_DATA_LEVEL);
     monGender = GetMonGender(&gPlayerParty[gBattleStruct->expGetterMonId]);
@@ -6121,9 +6122,9 @@ static void DrawLevelUpBannerText(void)
     *(txtPtr)++ = CHAR_EXTRA_SYMBOL;
     *(txtPtr)++ = CHAR_LV_2;
 
-    var = (u32)(txtPtr);
+    stringAddress = (uintptr_t)txtPtr;
     txtPtr = ConvertIntToDecimalStringN(txtPtr, monLevel, STR_CONV_MODE_LEFT_ALIGN, 3);
-    var = (u32)(txtPtr) - var;
+    var = (u32)((uintptr_t)txtPtr - stringAddress);
     txtPtr = StringFill(txtPtr, CHAR_SPACER, 4 - var);
 
     if (monGender != MON_GENDERLESS)
@@ -6681,7 +6682,7 @@ static void Cmd_trymirrormove(void)
         gHitMarker &= ~HITMARKER_ATTACKSTRING_PRINTED;
         gCurrentMove = move;
         gBattlerTarget = GetMoveTarget(gCurrentMove, NO_TARGET_OVERRIDE);
-        gBattlescriptCurrInstr = gBattleScriptsForMoveEffects[gBattleMoves[gCurrentMove].effect];
+        gBattlescriptCurrInstr = HostResolveGbaAddr(gBattleScriptsForMoveEffects[gBattleMoves[gCurrentMove].effect]);
     }
     else if (validMovesCount != 0)
     {
@@ -6689,7 +6690,7 @@ static void Cmd_trymirrormove(void)
         i = Random() % validMovesCount;
         gCurrentMove = validMoves[i];
         gBattlerTarget = GetMoveTarget(gCurrentMove, NO_TARGET_OVERRIDE);
-        gBattlescriptCurrInstr = gBattleScriptsForMoveEffects[gBattleMoves[gCurrentMove].effect];
+        gBattlescriptCurrInstr = HostResolveGbaAddr(gBattleScriptsForMoveEffects[gBattleMoves[gCurrentMove].effect]);
     }
     else // no valid moves found
     {
@@ -7936,7 +7937,7 @@ static void Cmd_metronome(void)
         if (sMovesForbiddenToCopy[i] == METRONOME_FORBIDDEN_END)
         {
             gHitMarker &= ~HITMARKER_ATTACKSTRING_PRINTED;
-            gBattlescriptCurrInstr = gBattleScriptsForMoveEffects[gBattleMoves[gCurrentMove].effect];
+            gBattlescriptCurrInstr = HostResolveGbaAddr(gBattleScriptsForMoveEffects[gBattleMoves[gCurrentMove].effect]);
             gBattlerTarget = GetMoveTarget(gCurrentMove, NO_TARGET_OVERRIDE);
             return;
         }
@@ -8186,7 +8187,7 @@ static void Cmd_copymovepermanently(void)
         }
         else // sketch worked
         {
-            struct MovePpInfo movePpData;
+            struct MovePpInfo movePpData = {0};
 
             gBattleMons[gBattlerAttacker].moves[gCurrMovePos] = gLastPrintedMoves[gBattlerTarget];
             gBattleMons[gBattlerAttacker].pp[gCurrMovePos] = gBattleMoves[gLastPrintedMoves[gBattlerTarget]].pp;
@@ -9131,7 +9132,7 @@ static void Cmd_callenvironmentattack(void)
     gHitMarker &= ~HITMARKER_ATTACKSTRING_PRINTED;
     gCurrentMove = sNaturePowerMoves[gBattleEnvironment];
     gBattlerTarget = GetMoveTarget(gCurrentMove, NO_TARGET_OVERRIDE);
-    BattleScriptPush(gBattleScriptsForMoveEffects[gBattleMoves[gCurrentMove].effect]);
+    BattleScriptPush(HostResolveGbaAddr(gBattleScriptsForMoveEffects[gBattleMoves[gCurrentMove].effect]));
     gBattlescriptCurrInstr++;
 }
 

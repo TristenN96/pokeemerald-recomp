@@ -49,6 +49,10 @@ static void Task_RunLoopedTask(u8);
 static void Task_Pokenav(u8);
 static void CB2_InitPokenavForTutorial(void);
 
+#if defined(LINUX64) && LINUX64
+static LoopedTask sLoopedTaskFuncs[NUM_TASKS];
+#endif
+
 const struct PokenavCallbacks PokenavMenuCallbacks[15] =
 {
     [POKENAV_MAIN_MENU - POKENAV_MENU_IDS_START] =
@@ -216,7 +220,11 @@ u32 CreateLoopedTask(LoopedTask loopedTask, u32 priority)
     else
         taskId = CreateTask(Task_RunLoopedTask_LinkMode, priority);
 
+#if defined(LINUX64) && LINUX64
+    sLoopedTaskFuncs[taskId] = loopedTask;
+#else
     SetWordTaskArg(taskId, 1, (u32)loopedTask);
+#endif
 
     gTasks[taskId].data[3] = gNextLoopedTaskId;
     return LOOPED_TASK_ID(taskId, gNextLoopedTaskId++);
@@ -242,7 +250,11 @@ bool32 FuncIsActiveLoopedTask(LoopedTask func)
     {
         if (gTasks[i].isActive
             && (gTasks[i].func == Task_RunLoopedTask || gTasks[i].func == Task_RunLoopedTask_LinkMode)
+#if defined(LINUX64) && LINUX64
+            && sLoopedTaskFuncs[i] == func)
+#else
             && (LoopedTask)GetWordTaskArg(i, 1) == func)
+#endif
             return TRUE;
     }
     return FALSE;
@@ -250,7 +262,11 @@ bool32 FuncIsActiveLoopedTask(LoopedTask func)
 
 static void Task_RunLoopedTask(u8 taskId)
 {
+#if defined(LINUX64) && LINUX64
+    LoopedTask loopedTask = sLoopedTaskFuncs[taskId];
+#else
     LoopedTask loopedTask = (LoopedTask)GetWordTaskArg(taskId, 1);
+#endif
     s16 *state = &gTasks[taskId].data[0];
     bool32 exitLoop = FALSE;
 
@@ -290,7 +306,11 @@ static void Task_RunLoopedTask_LinkMode(u8 taskId)
     if (Overworld_IsRecvQueueAtMax())
         return;
 
+#if defined(LINUX64) && LINUX64
+    task = sLoopedTaskFuncs[taskId];
+#else
     task = (LoopedTask)GetWordTaskArg(taskId, 1);
+#endif
     state = &gTasks[taskId].data[0];
     action = task(*state);
     switch (action)

@@ -38,9 +38,10 @@ static void FieldCallback_Dig(void)
 bool8 FldEff_UseDig(void)
 {
     u8 taskId = CreateFieldMoveTask();
+    GbaAddr callbackAddr = HOST_FUNCTION_ADDR(StartDigFieldEffect);
 
-    gTasks[taskId].data[8] = (u32)StartDigFieldEffect >> 16;
-    gTasks[taskId].data[9] = (u32)StartDigFieldEffect;
+    gTasks[taskId].data[8] = callbackAddr >> 16;
+    gTasks[taskId].data[9] = callbackAddr;
     if (!ShouldDoBrailleDigEffect())
         SetPlayerAvatarTransitionFlags(PLAYER_AVATAR_FLAG_ON_FOOT);
     return FALSE;

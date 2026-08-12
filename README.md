@@ -1,37 +1,72 @@
-# pokeemerald-multiplatform
+# pokeemerald-recomp
 
-An experimental Windows, Linux, and Android port of the [Pokemon Emerald decompilation](https://github.com/pret/pokeemerald).
+`pokeemerald-recomp` is a native desktop recompilation/port of Pokémon Emerald,
+built from the [pret Pokémon Emerald decompilation](https://github.com/pret/pokeemerald).
+The public alpha supports Linux x64 and Windows x64.
 
-The project runs the decompiled game code directly. It is not a bundled GBA emulator and does not include a commercial ROM.
+> **Alpha software:** `v0.1.0-alpha` is an early test release. Back up important
+> saves and expect bugs or compatibility changes.
 
-## Platform Status
+## A Pokémon Emerald ROM is required
 
-| Platform | Status | Output |
-| --- | --- | --- |
-| Windows | Working through the SDL2 backend | `pokeemerald.exe` |
-| Linux | Working native 32-bit SDL2 build | `pokeemerald` |
-| Android | Working experimental ARMv7 SDL2 build | `android/app/build/outputs/apk/debug/app-debug.apk` |
-| GBA ROM | Upstream target | `pokeemerald.gba` |
+**No Pokémon Emerald ROM is included in this repository or in any release.** You
+must provide your own compatible ROM. The launcher validates and imports it
+locally; the ROM is never uploaded, and gameplay remains unavailable until a
+valid import succeeds.
 
-## Port Changes
+The supported ROM is:
 
-- Repaired the portable MP2K/M4A music player and sound mixer build.
-- Added SDL2 float audio output at 42060 Hz.
-- Sanitized invalid floating-point samples independently in the M4A and CGB audio paths, eliminating loud buzzing without discarding valid audio.
-- Added output headroom and clipping protection.
-- Fixed structure and pointer conversions required by the portable audio engine.
-- Fixed portable BIOS, DMA, flash-save, trainer-card, and sound-related compilation errors.
-- Added working save-file access through `pokeemerald.sav`.
-- Added a Wine launcher for the Windows build.
-- Added native 32-bit Linux compilation and SDL2 linkage.
-- Added aspect-ratio-preserving 3:2 rendering with independently scaled background artwork and a transparent frame.
-- Added persistent display settings with automatic support for additional numbered background images.
-- Added an experimental Android SDL2/Gradle project and an ARMv7 cross-compilation pipeline.
-- Added Android rendering, frame pacing, audio output, writable save storage, and lifecycle handling.
-- Added an Android-native labeled multitouch overlay and SDL game-controller input.
-- Added launcher icons on Android and an embedded multi-resolution icon on Windows.
+- Revision: Pokémon Emerald (USA, Europe), Rev 0 (`BPEE01`)
+- SHA-1: `f3ae088181bf583e55daf962a92bb46f4f1d07b7`
+- Size: 16 MiB (16,777,216 bytes)
 
-## Controls
+## Features
+
+- Native Linux x64 and Windows x64 execution
+- Emerald-style launcher and separate player profiles
+- Remappable keyboard and controller inputs
+- Hold and toggle fast-forward
+- Quick Save (`F5`) and Quick Load (`F9`)
+- Save-state manager (`F6`) and manual save-state slots (`F7`)
+- Mid-battle save states
+- Save-state screenshots and manager previews
+- Native normal-save persistence for each profile
+- Fullscreen toggle (`F10`)
+
+## Install a release
+
+### Linux x64
+
+1. Extract `pokeemerald-recomp-v0.1.0-alpha-linux-x64.tar.gz`.
+2. Keep `BG.png`, `BG1.png`, `Border.png`, and `images/` beside the executable.
+3. Run `./pokeemerald-recomp` from the extracted directory. You may also run it
+   by absolute path from another working directory.
+
+The Linux build uses the system SDL2 and SDL2_image runtime libraries. Install
+their 64-bit runtime packages with your distribution's package manager if they
+are not already present.
+
+### Windows x64
+
+1. Extract `pokeemerald-recomp-v0.1.0-alpha-windows-x64.zip`.
+2. Keep the included DLLs and artwork beside `pokeemerald-recomp.exe`.
+3. Double-click `pokeemerald-recomp.exe`.
+
+The archive includes the required SDL2 runtime DLLs. MinGW, MSYS2, Visual Studio,
+and a separate SDL installation are not required.
+
+On first launch, select a ROM you legally own. A successful import opens the
+profile selector; choose a profile to start the game. Imported game content,
+profiles, saves, settings, and save states are written to per-user application
+data, not to the release folder.
+
+Typical data locations are:
+
+- Linux: `$XDG_DATA_HOME/pokeemerald/pokeemerald/`, or
+  `~/.local/share/pokeemerald/pokeemerald/` when `XDG_DATA_HOME` is unset
+- Windows: `%APPDATA%\PokemonEmeraldRecomp\`
+
+## Default controls
 
 | GBA control | Keyboard |
 | --- | --- |
@@ -42,105 +77,49 @@ The project runs the decompiled game code directly. It is not a bundled GBA emul
 | L | `A` |
 | R | `S` |
 | D-pad | Arrow keys |
-| Fast-forward | `Space` |
+| Fast-forward (hold) | `Space` |
+| Fast-forward (toggle) | `Shift+Space` |
+| Quick Save | `F5` |
+| Save-state manager | `F6` |
+| Manual save-state slot | `F7` |
+| Quick Load | `F9` |
+| Fullscreen | `F10` |
 | Pause | `Ctrl+P` |
 | Soft reset | `Ctrl+R` |
 
-Windows XInput controllers are supported by the SDL2 backend. Android supports SDL-compatible gamepads, including D-pad and left analog-stick movement. Native Linux currently uses keyboard input.
+Controls can be changed from the launcher's settings screen.
 
-## Windows Build
+## Build and package
 
-The Windows target uses the 32-bit MinGW toolchain, SDL2, and ImageMagick. ImageMagick converts the PNG border assets to alpha-preserving BMP files supported by the Windows SDL2 build:
-
-```sh
-make -f Makefile_pc -j4
-```
-
-Place `SDL2.dll` beside `pokeemerald.exe`. On Linux, the Windows build can be launched through Wine with:
+The canonical Linux x64 build is:
 
 ```sh
-./launch.sh
+make -f Makefile_pc NATIVE_LINUX=1 LINUX64=1 rom -j"$(nproc)"
 ```
 
-## Linux Build
-
-The game data contains 32-bit pointers, so the native Linux target must currently be built as a 32-bit executable. Install a multilib C toolchain plus 32-bit SDL2 and SDL2_image development files, then run:
+Release targets build clean staging layouts under `dist/` and versioned archives
+under `release/`:
 
 ```sh
-make -f Makefile_pc linux -j4
-./pokeemerald
+make -f Makefile_pc release-linux -j"$(nproc)"
+make -f Makefile_pc release-windows -j"$(nproc)"
+make -f Makefile_pc release -j"$(nproc)"
 ```
 
-Linux objects are kept separately under `build/linux`, so they do not interfere with the Windows build.
+Windows dependencies are downloaded from the official SDL release archives and
+verified against pinned SHA-256 checksums. Packaging copies files from an explicit
+allowlist and never reads from `rom/`. Building both release targets requires a C
+toolchain, an x86_64 MinGW-w64 GCC cross-toolchain, `curl`, `tar`, and `zip`.
 
-The resulting executable is `pokeemerald` in the repository root.
-
-## Display Settings
-
-The in-game Options menu includes a `DISPLAY` page. Settings apply immediately and are written to `pokeemerald.cfg`; Android stores the same config in the app's private storage.
-
-Desktop builds support fullscreen, window size, integer scaling, VSync, border frame visibility, background selection, and volume. Android supports border frame visibility, background selection, and volume.
-
-## Border Artwork
-
-Windows, Linux, and Android use the same border assets from the repository root:
-
-- `Border.png` is the transparent frame fitted around the centered 3:2 gameplay viewport.
-- `BG.png` is the default background and scales independently to fill the complete output.
-- `BG1.png`, `BG2.png`, and subsequent sequentially numbered files add selectable backgrounds after the default `BG` entry.
-
-The background selector order is `BG`, `BG 1`, `BG 2`, and so on, followed by `OFF` for a plain black background. Numbered files must be contiguous; for example, `BG2.png` is only detected when `BG1.png` is also present.
-
-Backgrounds and the frame should use a 1280x720 canvas. Keep the frame opening centered at the same location and dimensions as `Border.png` so it remains aligned at different output aspect ratios.
-
-## Saving
-
-Save data is read from and written to:
-
-```text
-pokeemerald.sav
-```
-
-Keep this file if you clean or move the build.
-
-## Android Build
-
-The Android project targets API 36 and `armeabi-v7a`. The 32-bit ABI is required by the game's current pointer layout. Android SDK 36, NDK `26.3.11579264`, CMake 3.22.1, and a compatible JDK are required.
-
-Initialize SDL2 and apply the Android lifecycle patch once after cloning:
-
-```sh
-git submodule update --init --recursive
-git -C android/SDL2 apply ../patches/sdl2-android-lifecycle.patch
-```
-
-Set `JAVA_HOME` and `ANDROID_HOME`, then build with SDL2's Gradle wrapper:
-
-```sh
-android/SDL2/android-project/gradlew -p android :app:assembleDebug
-```
-
-Install the debug APK on a connected device with:
-
-```sh
-adb install -r android/app/build/outputs/apk/debug/app-debug.apk
-```
-
-Android saves are stored in the app's writable private storage. Windows and Linux continue to use `pokeemerald.sav` in the working directory.
-
-Android includes a labeled multitouch overlay for the D-pad, A, B, Start, Select, L, and R.
-
-## Upstream Project
-
-This repository is based on the Pokémon Emerald decompilation. The upstream project builds the following ROM:
-
-- `pokeemerald.gba`
-- SHA-1: `f3ae088181bf583e55daf962a92bb46f4f1d07b7`
-
-See [INSTALL.md](INSTALL.md) for the original decompilation setup and [pret.github.io](https://pret.github.io/) for other pret projects.
+See [INSTALL.md](INSTALL.md) for upstream decompilation setup details and `docs/`
+for port architecture notes.
 
 ## Legal
 
-Pokémon and Pokémon Emerald are trademarks of Nintendo, Creatures Inc., and GAME FREAK inc. This is an unofficial fan project and is not affiliated with or endorsed by those companies.
+Pokémon and Pokémon Emerald are trademarks of Nintendo, Creatures Inc., and
+GAME FREAK inc. This unofficial fan project is not affiliated with or endorsed
+by those companies.
 
-The scoped license in [LICENSE](LICENSE) applies only to original multiplatform-port modifications contributed through this fork. It does not relicense upstream code, third-party components, or copyrighted game assets.
+The scoped [LICENSE](LICENSE) applies only to original multiplatform-port changes
+contributed through this fork. It does not relicense upstream code, third-party
+components, or copyrighted game assets.

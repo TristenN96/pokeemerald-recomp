@@ -5011,7 +5011,7 @@ void AnimTask_MoonlightEndFade(u8 taskId)
     gTasks[taskId].data[9] = 15;
     b = GetBattleMonSpritePalettesMask(1, 1, 1, 1);
     c = a | b;
-    StorePointerInVars(&gTasks[taskId].data[14], &gTasks[taskId].data[15], (void *)c);
+    StorePointerInVars(&gTasks[taskId].data[14], &gTasks[taskId].data[15], (void *)(uintptr_t)c);
     b = b | (0x10000 << IndexOfSpritePaletteTag(ANIM_TAG_MOON));
     d = IndexOfSpritePaletteTag(ANIM_TAG_GREEN_SPARKLE);
     BeginNormalPaletteFade((0x10000 << d) | b, 0, 0, 16, RGB(27, 29, 31));
@@ -5086,7 +5086,8 @@ static void AnimTask_MoonlightEndFade_Step(u8 taskId)
     case 2:
         if (++task->data[1] > 30)
         {
-            BeginNormalPaletteFade((u32)LoadPointerFromVars(task->data[14], task->data[15]), 0, 16, 0, RGB(27, 29, 31));
+            GbaAddr paletteMask = (u16)task->data[14] | ((u16)task->data[15] << 16);
+            BeginNormalPaletteFade(paletteMask, 0, 16, 0, RGB(27, 29, 31));
             task->data[0]++;
         }
         break;

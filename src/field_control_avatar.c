@@ -30,6 +30,7 @@
 #include "wild_encounter.h"
 #include "constants/event_bg.h"
 #include "constants/event_objects.h"
+
 #include "constants/field_poison.h"
 #include "constants/map_types.h"
 #include "constants/songs.h"
@@ -346,8 +347,11 @@ static const u8 *GetInteractedBackgroundEventScript(struct MapPosition *position
     case 5:
     case 6:
     case BG_EVENT_HIDDEN_ITEM:
-        gSpecialVar_0x8004 = ((u32)bgEvent->bgUnion.script >> 16) + FLAG_HIDDEN_ITEMS_START;
-        gSpecialVar_0x8005 = (u32)bgEvent->bgUnion.script;
+        {
+            GbaAddr scriptAddr = HostPointerToGbaAddr(bgEvent->bgUnion.script);
+            gSpecialVar_0x8004 = (scriptAddr >> 16) + FLAG_HIDDEN_ITEMS_START;
+            gSpecialVar_0x8005 = scriptAddr;
+        }
         if (FlagGet(gSpecialVar_0x8004) == TRUE)
             return NULL;
         return EventScript_HiddenItemScript;

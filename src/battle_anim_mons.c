@@ -416,18 +416,26 @@ u8 GetAnimBattlerSpriteId(u8 animBattler)
 
 void StoreSpriteCallbackInData6(struct Sprite *sprite, void (*callback)(struct Sprite *))
 {
-    sprite->data[6] = (u32)(callback) & 0xffff;
-    sprite->data[7] = (u32)(callback) >> 16;
+#if defined(LINUX64) && LINUX64
+    sprite->data[6] = 0;
+    sprite->data[7] = 0;
+    Sprite_StoreCallback(sprite, callback);
+#else
+    GbaAddr callbackAddr = HostFunctionToGbaAddr(&callback, sizeof(callback));
+
+    sprite->data[6] = callbackAddr & 0xffff;
+    sprite->data[7] = callbackAddr >> 16;
+#endif
 }
 
 void SetCallbackToStoredInData6(struct Sprite *sprite)
 {
-#ifndef PORTABLE
-    u32 callback = (u16)sprite->data[6] | (sprite->data[7] << 16);
+#if defined(LINUX64) && LINUX64
+    Sprite_SetCallbackFromStored(sprite);
 #else
-    u32 callback = (u16)sprite->data[6] | ((u16)sprite->data[7] << 16);
+    GbaAddr callbackAddr = (u16)sprite->data[6] | ((u16)sprite->data[7] << 16);
+    HostResolveFunction(callbackAddr, &sprite->callback, sizeof(sprite->callback));
 #endif
-    sprite->callback = (void (*)(struct Sprite *))callback;
 }
 
 // Sprite data for TranslateSpriteInCircle/Ellipse and related
@@ -1950,13 +1958,14 @@ static u16 GetBattlerYDeltaFromSpriteId(u8 spriteId)
 
 void StorePointerInVars(s16 *lo, s16 *hi, const void *ptr)
 {
-    *lo = ((intptr_t) ptr) & 0xffff;
-    *hi = (((intptr_t) ptr) >> 16) & 0xffff;
+    GbaAddr address = HostPointerToGbaAddr(ptr);
+    *lo = address & 0xffff;
+    *hi = address >> 16;
 }
 
 void *LoadPointerFromVars(s16 lo, s16 hi)
 {
-    return (void *)((u16)lo | ((u16)hi << 16));
+    return HostResolveGbaAddr((u16)lo | ((u16)hi << 16));
 }
 
 void PrepareEruptAnimTaskData(struct Task *task, u8 spriteId, s16 xScaleStart, s16 yScaleStart, s16 xScaleEnd, s16 yScaleEnd, u16 duration)

@@ -2,7 +2,11 @@
 .global SPECIAL_\ptr
 .set SPECIAL_\ptr, __special__
 .set __special__, __special__ + 1
+	.if LINUX64
+	.quad \ptr
+	.else
 	.int \ptr
+	.endif
 	.endm
 
 .set __special__, 0

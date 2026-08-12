@@ -903,9 +903,9 @@ u8 GetSpeciesBackAnimSet(u16 species)
 // By dumb luck, this is not an issue in vanilla. However,
 // changing the link order revealed this bug.
 #if MODERN || defined(BUGFIX)
-#define ANIM_SPRITE(taskId)   ((struct Sprite *)((gTasks[taskId].tPtrHi << 16) | ((u16)gTasks[taskId].tPtrLo)))
+#define ANIM_SPRITE(taskId)   HostResolveGbaAddr((gTasks[taskId].tPtrHi << 16) | ((u16)gTasks[taskId].tPtrLo))
 #else
-#define ANIM_SPRITE(taskId)   ((struct Sprite *)((gTasks[taskId].tPtrHi << 16) | (gTasks[taskId].tPtrLo)))
+#define ANIM_SPRITE(taskId)   HostResolveGbaAddr((gTasks[taskId].tPtrHi << 16) | (gTasks[taskId].tPtrLo))
 #endif //MODERN || BUGFIX
 
 static void Task_HandleMonAnimation(u8 taskId)
@@ -941,8 +941,9 @@ static void Task_HandleMonAnimation(u8 taskId)
 void LaunchAnimationTaskForFrontSprite(struct Sprite *sprite, u8 frontAnimId)
 {
     u8 taskId = CreateTask(Task_HandleMonAnimation, 128);
-    gTasks[taskId].tPtrHi = (u32)(sprite) >> 16;
-    gTasks[taskId].tPtrLo = (u32)(sprite);
+    GbaAddr spriteAddr = HostPointerToGbaAddr(sprite);
+    gTasks[taskId].tPtrHi = spriteAddr >> 16;
+    gTasks[taskId].tPtrLo = spriteAddr;
     gTasks[taskId].tAnimId = frontAnimId;
 }
 
@@ -958,8 +959,9 @@ void LaunchAnimationTaskForBackSprite(struct Sprite *sprite, u8 backAnimSet)
     u8 nature, taskId, animId, battler;
 
     taskId = CreateTask(Task_HandleMonAnimation, 128);
-    gTasks[taskId].tPtrHi = (u32)(sprite) >> 16;
-    gTasks[taskId].tPtrLo = (u32)(sprite);
+    GbaAddr spriteAddr = HostPointerToGbaAddr(sprite);
+    gTasks[taskId].tPtrHi = spriteAddr >> 16;
+    gTasks[taskId].tPtrLo = spriteAddr;
 
     battler = sprite->data[0];
     nature = GetNature(&gPlayerParty[gBattlerPartyIndexes[battler]]);

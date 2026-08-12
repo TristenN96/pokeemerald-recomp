@@ -1894,7 +1894,11 @@ static void ResetHPTaskData(u8 taskId, u8 caseId, u32 hp)
             tPartyId = hp;
             break;
         case 5:
-            SetTaskFuncWithFollowupFunc(taskId, Task_PartyMenuModifyHP, (TaskFunc)hp); // >casting hp as a taskfunc
+            {
+                TaskFunc callback;
+                HostResolveFunction((GbaAddr)hp, &callback, sizeof(callback));
+                SetTaskFuncWithFollowupFunc(taskId, Task_PartyMenuModifyHP, callback);
+            }
             break;
     }
 }

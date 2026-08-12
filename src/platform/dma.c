@@ -1,6 +1,8 @@
 #include "global.h"
 #include "platform/dma.h"
 
+#include <stdint.h>
+
 struct DMATransfer {
     union {
         const void *src;
@@ -16,6 +18,14 @@ struct DMATransfer {
     u16 control;
 } DMAList[DMA_COUNT];
 
+static void ValidateDmaTransfer(const struct DMATransfer *dma, int dmaNum)
+{
+    size_t elementSize = (dma->control & DMA_32BIT) ? sizeof(u32) : sizeof(u16);
+    HostAssertMemoryRange(dma->src, (size_t)dma->size * elementSize, "DMA source");
+    HostAssertMemoryRange(dma->dst, (size_t)dma->size * elementSize, "DMA destination");
+    (void)dmaNum;
+}
+
 void RunDMAs(u32 type)
 {
     for (int dmaNum = 0; dmaNum < DMA_COUNT; dmaNum++)
@@ -30,6 +40,7 @@ void RunDMAs(u32 type)
         if ( (dma->control & DMA_ENABLE) &&
            (((dma->control & DMA_START_MASK) >> 12) == type))
         {
+            ValidateDmaTransfer(dma, dmaNum);
             //printf("DMA%d src=%p, dest=%p, control=%d\n", dmaNum, dma->src, dma->dest, dma->control);
             for (int i = 0; i < (dma->size); i++)
             {
@@ -77,7 +88,7 @@ void RunDMAs(u32 type)
                 dma->size = ((&REG_DMA0CNT)[dmaNum * 3] & 0x1FFFF);
                 if (((dma->control) & DMA_DEST_MASK) == DMA_DEST_RELOAD)
                 {
-                    dma->dst = (void *)(uintptr_t)((&REG_DMA0DAD)[dmaNum * 3]);
+                    dma->dst = HostResolveGbaAddr((&REG_DMA0DAD)[dmaNum * 3]);
                 }
             }
             else
@@ -96,8 +107,10 @@ void DmaSet(int dmaNum, const void *src, void *dest, u32 control)
         return;
     }
 
-    (&REG_DMA0SAD)[dmaNum * 3] = (vu32)(uintptr_t)src;
-    (&REG_DMA0DAD)[dmaNum * 3] = (vu32)(uintptr_t)dest;
+    HostAssertMemoryRange(src, (size_t)(control & 0x1ffff) * ((control & (DMA_32BIT << 16)) ? sizeof(u32) : sizeof(u16)), "DMA source");
+    HostAssertMemoryRange(dest, (size_t)(control & 0x1ffff) * ((control & (DMA_32BIT << 16)) ? sizeof(u32) : sizeof(u16)), "DMA destination");
+    (&REG_DMA0SAD)[dmaNum * 3] = HostPointerToGbaAddr(src);
+    (&REG_DMA0DAD)[dmaNum * 3] = HostPointerToGbaAddr(dest);
     (&REG_DMA0CNT)[dmaNum * 3] = control;
 
     struct DMATransfer *dma = &DMAList[dmaNum];

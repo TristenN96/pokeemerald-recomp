@@ -31,6 +31,10 @@
 #define SLOTMACHINE_GFX_TILES 233
 #define MAX_BET 3
 
+#if defined(LINUX64) && LINUX64
+static MainCallback sSlotMachineExitCallbacks[NUM_TASKS];
+#endif
+
 #define SYMBOLS_PER_REEL   21
 #define REEL_SYMBOL_HEIGHT 24
 #define REEL_HEIGHT        (SYMBOLS_PER_REEL * REEL_SYMBOL_HEIGHT)
@@ -1114,9 +1118,14 @@ static void SlotMachine_VBlankCB(void)
 
 static void PlaySlotMachine_Internal(u8 machineId, MainCallback exitCallback)
 {
-    struct Task *task = &gTasks[CreateTask(SlotMachineDummyTask, 0xFF)];
+    u8 taskId = CreateTask(SlotMachineDummyTask, 0xFF);
+    struct Task *task = &gTasks[taskId];
     task->tMachineId = machineId;
+#if defined(LINUX64) && LINUX64
+    sSlotMachineExitCallbacks[taskId] = exitCallback;
+#else
     StoreWordInTwoHalfwords(&task->tExitCallback, (intptr_t)exitCallback);
+#endif
 }
 
 // Extracts and assigns machineId and exit callback from task.
@@ -1124,7 +1133,11 @@ static void SlotMachine_InitFromTask(void)
 {
     struct Task *task = &gTasks[FindTaskIdByFunc(SlotMachineDummyTask)];
     sSlotMachine->machineId = task->tMachineId;
+#if defined(LINUX64) && LINUX64
+    sSlotMachine->prevMainCb = sSlotMachineExitCallbacks[FindTaskIdByFunc(SlotMachineDummyTask)];
+#else
     LoadWordFromTwoHalfwords((u16 *)&task->tExitCallback, (u32 *)&sSlotMachine->prevMainCb);
+#endif
 }
 
 static void SlotMachineDummyTask(u8 taskId)

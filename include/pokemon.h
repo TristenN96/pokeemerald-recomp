@@ -376,12 +376,24 @@ extern u8 gEnemyPartyCount;
 extern struct Pokemon gEnemyParty[PARTY_SIZE];
 extern struct SpriteTemplate gMultiuseSpriteTemplate;
 
+#ifdef DESKTOP_EXTERNAL_GAME_CONTENT
+extern struct BattleMove gBattleMoves[];
+#else
 extern const struct BattleMove gBattleMoves[];
+#endif
 extern const u8 gFacilityClassToPicIndex[];
 extern const u8 gFacilityClassToTrainerClass[];
+#ifdef DESKTOP_EXTERNAL_GAME_CONTENT
+extern struct SpeciesInfo gSpeciesInfo[];
+#else
 extern const struct SpeciesInfo gSpeciesInfo[];
+#endif
 extern const u8 *const gItemEffectTable[];
+#ifdef DESKTOP_EXTERNAL_GAME_CONTENT
+extern u32 gExperienceTables[][MAX_LEVEL + 1];
+#else
 extern const u32 gExperienceTables[][MAX_LEVEL + 1];
+#endif
 extern const u16 *const gLevelUpLearnsets[];
 extern const u8 gPPUpGetMask[];
 extern const u8 gPPUpClearMask[];

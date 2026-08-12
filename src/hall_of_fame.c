@@ -1241,30 +1241,30 @@ static void HallOfFame_PrintPlayerInfo(u8 unused1, u8 unused2)
 
 static void ClearVramOamPltt_LoadHofPal(void)
 {
-    u32 vramOffset, oamOffset, plttOffset;
+    GbaOffset vramOffset, oamOffset, plttOffset;
     u32 vramSize, oamSize, plttSize;
 
-    vramOffset = (u32)(uintptr_t)(VRAM);
+    vramOffset = 0;
     vramSize = VRAM_SIZE;
     while (TRUE)
     {
-        DmaFill16(3, 0, (void *)(uintptr_t)vramOffset, 0x1000);
+        DmaFill16(3, 0, (u8 *)VRAM + vramOffset, 0x1000);
         vramOffset += 0x1000;
         vramSize -= 0x1000;
         if (vramSize <= 0x1000)
         {
-            DmaFill16(3, 0, (void *)(uintptr_t)vramOffset, vramSize);
+            DmaFill16(3, 0, (u8 *)VRAM + vramOffset, vramSize);
             break;
         }
     }
 
-    oamOffset = (u32)(uintptr_t)OAM;
+    oamOffset = 0;
     oamSize = OAM_SIZE;
-    DmaFill32(3, 0, (void *)(uintptr_t)oamOffset, oamSize);
+    DmaFill32(3, 0, OAM + oamOffset, oamSize);
 
-    plttOffset = (u32)(uintptr_t)PLTT;
+    plttOffset = 0;
     plttSize = PLTT_SIZE;
-    DmaFill16(3, 0, (void *)(uintptr_t)plttOffset, plttSize);
+    DmaFill16(3, 0, PLTT + plttOffset, plttSize);
 
     ResetPaletteFade();
     LoadPalette(sHallOfFame_Pal, BG_PLTT_ID(0), sizeof(sHallOfFame_Pal));
