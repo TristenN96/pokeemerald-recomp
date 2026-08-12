@@ -917,7 +917,13 @@ static void Settings(void)
             {
                 char romPath[1024];
                 struct PlatformGameContentImportInfo info;
-                if (Platform_FileDialogSelectEmeraldRom(romPath, sizeof(romPath)))
+                enum PlatformFileDialogResult result;
+
+                result = Platform_FileDialogSelectEmeraldRom(romPath, sizeof(romPath));
+                if (result == PLATFORM_FILE_DIALOG_NO_PICKER_AVAILABLE)
+                    snprintf(message, sizeof(message),
+                             "No file picker found. Install Zenity, KDialog, or YAD.");
+                else if (result == PLATFORM_FILE_DIALOG_SELECTED)
                 {
                     if (Platform_GameContentImport(romPath, &info)
                         == PLATFORM_GAME_CONTENT_IMPORT_OK)
@@ -1057,7 +1063,8 @@ static SDL_Texture *LoadRayquazaTexture(void)
 #endif
 }
 
-static void DrawGameDataSetup(int cursor, const struct PlatformGameContentImportInfo *info)
+static void DrawGameDataSetup(int cursor, const struct PlatformGameContentImportInfo *info,
+                              const char *message)
 {
     DrawLauncherChrome();
     DrawTextOutlined(579, 54, "GAME DATA REQUIRED", 3,
@@ -1092,7 +1099,10 @@ static void DrawGameDataSetup(int cursor, const struct PlatformGameContentImport
                          (SDL_Color){112, 211, 169, 255});
         DrawCenteredText(570, 243, 338, "NO ROM DATA IS UPLOADED OR TRANSMITTED.", 1,
                          (SDL_Color){112, 211, 169, 255});
-        if (info != NULL && info->error[0] != '\0')
+        if (message != NULL && message[0] != '\0')
+            DrawCenteredText(570, 295, 338, message, 1,
+                             (SDL_Color){255, 166, 160, 255});
+        else if (info != NULL && info->error[0] != '\0')
             DrawCenteredText(570, 275, 338, info->error, 1,
                              (SDL_Color){255, 166, 160, 255});
     }
@@ -1110,6 +1120,7 @@ bool32 Platform_FrontendRunGameDataSetup(void)
     char romPath[1024];
     struct PlatformGameContentImportInfo info;
     bool32 hasInfo = FALSE;
+    char message[96] = "";
 
     memset(&info, 0, sizeof(info));
     Platform_VideoBeginHostUi();
@@ -1117,7 +1128,7 @@ bool32 Platform_FrontendRunGameDataSetup(void)
     sRayquazaTexture = LoadRayquazaTexture();
     for (;;)
     {
-        DrawGameDataSetup(cursor, hasInfo ? &info : NULL);
+        DrawGameDataSetup(cursor, hasInfo ? &info : NULL, message);
         PresentUi();
         if (!NextEvent(&event) || IsCancelEvent(&event))
             break;
@@ -1125,10 +1136,20 @@ bool32 Platform_FrontendRunGameDataSetup(void)
             cursor = 1 - cursor;
         else if (IsAcceptEvent(&event))
         {
+            enum PlatformFileDialogResult result;
+
             if (cursor == 1)
                 break;
-            if (!Platform_FileDialogSelectEmeraldRom(romPath, sizeof(romPath)))
+            result = Platform_FileDialogSelectEmeraldRom(romPath, sizeof(romPath));
+            if (result == PLATFORM_FILE_DIALOG_NO_PICKER_AVAILABLE)
+            {
+                snprintf(message, sizeof(message),
+                         "No file picker found. Install Zenity, KDialog, or YAD.");
                 continue;
+            }
+            if (result != PLATFORM_FILE_DIALOG_SELECTED)
+                continue;
+            message[0] = '\0';
             hasInfo = TRUE;
             if (Platform_GameContentImport(romPath, &info) == PLATFORM_GAME_CONTENT_IMPORT_OK)
             {
