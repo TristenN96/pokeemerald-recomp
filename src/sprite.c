@@ -1,7 +1,13 @@
 #include "global.h"
+#include <stdint.h>
+#include <stdio.h>
+
 #include "sprite.h"
 #include "main.h"
 #include "palette.h"
+#include "platform/host_memory.h"
+
+extern void abort(void);
 
 #define MAX_SPRITE_COPY_REQUESTS 64
 
@@ -278,6 +284,13 @@ COMMON_DATA u32 gOamMatrixAllocBitmap = 0;
 COMMON_DATA u8 gReservedSpritePaletteCount = 0;
 
 EWRAM_DATA struct Sprite gSprites[MAX_SPRITES + 1] = {0};
+#if defined(LINUX64) && LINUX64
+EWRAM_DATA struct SpriteTemplate sSpriteTemplateSidecars[MAX_SPRITES + 1] = {0};
+EWRAM_DATA struct SpriteFrameImage sSpriteTemplateImageSidecars[MAX_SPRITES + 1] = {0};
+HOST_DATA static SpriteCallback sSpriteStoredCallbacks[MAX_SPRITES + 1];
+HOST_DATA static u32 sSpriteStateFailureOffset;
+HOST_DATA static uintptr_t sSpriteStateFailureAddress;
+#endif
 EWRAM_DATA static u16 sSpritePriorities[MAX_SPRITES] = {0};
 EWRAM_DATA static u8 sSpriteOrder[MAX_SPRITES] = {0};
 EWRAM_DATA static bool8 sShouldProcessSpriteCopyRequests = 0;
@@ -499,6 +512,63 @@ void AddSpritesToOamBuffer(void)
     }
 }
 
+#if defined(LINUX64) && LINUX64
+static bool32 SpriteSidecarFieldIsPersistent(uintptr_t value, bool32 functionField)
+{
+    struct HostPersistentAddress identity;
+
+    if (value == 0)
+        return TRUE;
+    if (functionField)
+        return HostFunctionToPersistentAddress(&value, sizeof(value), &identity);
+    return HostPointerToPersistentAddress((const void *)value, &identity);
+}
+
+static void SpriteSidecarRejectField(u8 index, const char *structure, const char *field,
+                                     uintptr_t value, bool32 functionField)
+{
+    fprintf(stderr, "sprite sidecar creation failure:\n");
+    fprintf(stderr, "  sprite_index=%u\n", index);
+    fprintf(stderr, "  structure=%s\n", structure);
+    fprintf(stderr, "  field=%s\n", field);
+    fprintf(stderr, "  raw_pointer=0x%zx\n", value);
+    fprintf(stderr, "  pointer_target=%s\n",
+            functionField ? "function outside the validated game image"
+                          : "data outside the validated game image (host stack or heap)");
+    fprintf(stderr, "  classification=%s\n",
+            functionField ? "non-persistent runtime callback"
+                          : "non-persistent runtime pointer");
+    fflush(stderr);
+    abort();
+}
+
+static void VerifySpriteSidecarFields(u8 index, bool32 copiedImage)
+{
+    const struct SpriteTemplate *sidecarTemplate = &sSpriteTemplateSidecars[index];
+    const struct SpriteFrameImage *sidecarImage = &sSpriteTemplateImageSidecars[index];
+
+    if (!SpriteSidecarFieldIsPersistent((uintptr_t)sidecarTemplate->oam, FALSE))
+        SpriteSidecarRejectField(index, "struct SpriteTemplate", "oam",
+                                 (uintptr_t)sidecarTemplate->oam, FALSE);
+    if (!SpriteSidecarFieldIsPersistent((uintptr_t)sidecarTemplate->anims, FALSE))
+        SpriteSidecarRejectField(index, "struct SpriteTemplate", "anims",
+                                 (uintptr_t)sidecarTemplate->anims, FALSE);
+    if (!SpriteSidecarFieldIsPersistent((uintptr_t)sidecarTemplate->images, FALSE))
+        SpriteSidecarRejectField(index, "struct SpriteTemplate", "images",
+                                 (uintptr_t)sidecarTemplate->images, FALSE);
+    if (!SpriteSidecarFieldIsPersistent((uintptr_t)sidecarTemplate->affineAnims, FALSE))
+        SpriteSidecarRejectField(index, "struct SpriteTemplate", "affineAnims",
+                                 (uintptr_t)sidecarTemplate->affineAnims, FALSE);
+    if (!SpriteSidecarFieldIsPersistent((uintptr_t)sidecarTemplate->callback, TRUE))
+        SpriteSidecarRejectField(index, "struct SpriteTemplate", "callback",
+                                 (uintptr_t)sidecarTemplate->callback, TRUE);
+    if (copiedImage
+     && !SpriteSidecarFieldIsPersistent((uintptr_t)sidecarImage->data, FALSE))
+        SpriteSidecarRejectField(index, "struct SpriteFrameImage", "data",
+                                 (uintptr_t)sidecarImage->data, FALSE);
+}
+#endif
+
 u8 CreateSprite(const struct SpriteTemplate *template, s16 x, s16 y, u8 subpriority)
 {
     u8 i;
@@ -542,6 +612,30 @@ u8 CreateSpriteAt(u8 index, const struct SpriteTemplate *template, s16 x, s16 y,
     struct Sprite *sprite = &gSprites[index];
 
     ResetSprite(sprite);
+#if defined(LINUX64) && LINUX64
+    const struct SpriteTemplate *stableTemplate = template;
+    bool32 copiedTemplate = FALSE;
+    bool32 copiedImage = FALSE;
+    struct HostPersistentAddress templateIdentity;
+
+    if (!HostPointerToPersistentAddress(template, &templateIdentity))
+    {
+        struct HostPersistentAddress imagesIdentity;
+
+        sSpriteTemplateSidecars[index] = *template;
+        copiedTemplate = TRUE;
+        if (template->images != NULL
+         && !HostPointerToPersistentAddress(template->images, &imagesIdentity))
+        {
+            sSpriteTemplateImageSidecars[index] = *template->images;
+            sSpriteTemplateSidecars[index].images = &sSpriteTemplateImageSidecars[index];
+            copiedImage = TRUE;
+        }
+        stableTemplate = &sSpriteTemplateSidecars[index];
+    }
+#else
+    const struct SpriteTemplate *stableTemplate = template;
+#endif
 
     sprite->inUse = TRUE;
     sprite->animBeginning = TRUE;
@@ -549,20 +643,27 @@ u8 CreateSpriteAt(u8 index, const struct SpriteTemplate *template, s16 x, s16 y,
     sprite->usingSheet = TRUE;
 
     sprite->subpriority = subpriority;
-    sprite->oam = *template->oam;
-    sprite->anims = template->anims;
-    sprite->affineAnims = template->affineAnims;
-    sprite->template = template;
-    sprite->callback = template->callback;
+    sprite->oam = *stableTemplate->oam;
+#if defined(LINUX64) && LINUX64
+    if (copiedTemplate)
+    {
+        sSpriteTemplateSidecars[index].oam = &sprite->oam;
+        VerifySpriteSidecarFields(index, copiedImage);
+    }
+#endif
+    sprite->anims = stableTemplate->anims;
+    sprite->affineAnims = stableTemplate->affineAnims;
+    sprite->template = stableTemplate;
+    sprite->callback = stableTemplate->callback;
     sprite->x = x;
     sprite->y = y;
 
     CalcCenterToCornerVec(sprite, sprite->oam.shape, sprite->oam.size, sprite->oam.affineMode);
 
-    if (template->tileTag == TAG_NONE)
+    if (stableTemplate->tileTag == TAG_NONE)
     {
         s16 tileNum;
-        sprite->images = template->images;
+        sprite->images = stableTemplate->images;
         tileNum = AllocSpriteTiles((u8)(sprite->images->size / TILE_SIZE_4BPP));
         if (tileNum == -1)
         {
@@ -575,15 +676,15 @@ u8 CreateSpriteAt(u8 index, const struct SpriteTemplate *template, s16 x, s16 y,
     }
     else
     {
-        sprite->sheetTileStart = GetSpriteTileStartByTag(template->tileTag);
+        sprite->sheetTileStart = GetSpriteTileStartByTag(stableTemplate->tileTag);
         SetSpriteSheetFrameTileNum(sprite);
     }
 
     if (sprite->oam.affineMode & ST_OAM_AFFINE_ON_MASK)
         InitSpriteAffineAnim(sprite);
 
-    if (template->paletteTag != TAG_NONE)
-        sprite->oam.paletteNum = IndexOfSpritePaletteTag(template->paletteTag);
+    if (stableTemplate->paletteTag != TAG_NONE)
+        sprite->oam.paletteNum = IndexOfSpritePaletteTag(stableTemplate->paletteTag);
 
     return index;
 }
@@ -681,8 +782,169 @@ void SetOamMatrix(u8 matrixNum, u16 a, u16 b, u16 c, u16 d)
 
 void ResetSprite(struct Sprite *sprite)
 {
+#if defined(LINUX64) && LINUX64
+    uintptr_t address = (uintptr_t)sprite;
+
+    if (address >= (uintptr_t)gSprites
+     && address < (uintptr_t)gSprites + sizeof(gSprites)
+     && (address - (uintptr_t)gSprites) % sizeof(*sprite) == 0)
+    {
+        u32 index = (u32)((address - (uintptr_t)gSprites) / sizeof(*sprite));
+
+        sSpriteStoredCallbacks[index] = NULL;
+        memset(&sSpriteTemplateSidecars[index], 0, sizeof(sSpriteTemplateSidecars[index]));
+        memset(&sSpriteTemplateImageSidecars[index], 0, sizeof(sSpriteTemplateImageSidecars[index]));
+    }
+#endif
     *sprite = sDummySprite;
 }
+
+#if defined(LINUX64) && LINUX64
+static bool32 Sprite_GetIndex(const struct Sprite *sprite, u32 *index)
+{
+    uintptr_t address = (uintptr_t)sprite;
+    uintptr_t start = (uintptr_t)gSprites;
+
+    if (index == NULL || address < start || address >= start + sizeof(gSprites)
+     || (address - start) % sizeof(*sprite) != 0)
+        return FALSE;
+    *index = (u32)((address - start) / sizeof(*sprite));
+    return TRUE;
+}
+
+void Sprite_StoreCallback(struct Sprite *sprite, SpriteCallback callback)
+{
+    u32 index;
+
+    if (!Sprite_GetIndex(sprite, &index))
+        abort();
+    sSpriteStoredCallbacks[index] = callback;
+}
+
+void Sprite_SetCallbackFromStored(struct Sprite *sprite)
+{
+    u32 index;
+
+    if (!Sprite_GetIndex(sprite, &index) || sSpriteStoredCallbacks[index] == NULL)
+        abort();
+    sprite->callback = sSpriteStoredCallbacks[index];
+}
+
+u32 Sprite_GetStateSize(void)
+{
+    return ARRAY_COUNT(sSpriteStoredCallbacks) * sizeof(struct HostPersistentAddress);
+}
+
+bool32 Sprite_SaveState(void *dest, u32 size)
+{
+    u32 i;
+
+    if (dest == NULL || size != Sprite_GetStateSize())
+        return FALSE;
+    sSpriteStateFailureOffset = 0;
+    sSpriteStateFailureAddress = 0;
+    for (i = 0; i < ARRAY_COUNT(sSpriteStoredCallbacks); i++)
+    {
+        struct HostPersistentAddress callback;
+        uintptr_t native = 0;
+
+        memcpy(&native, &sSpriteStoredCallbacks[i], sizeof(native));
+        if (!HostFunctionToPersistentAddress(&sSpriteStoredCallbacks[i],
+                                             sizeof(sSpriteStoredCallbacks[i]), &callback))
+        {
+            sSpriteStateFailureOffset = i * sizeof(callback);
+            sSpriteStateFailureAddress = native;
+            return FALSE;
+        }
+        memcpy((u8 *)dest + i * sizeof(callback), &callback, sizeof(callback));
+    }
+    return TRUE;
+}
+
+bool32 Sprite_ValidateState(const void *source, u32 size)
+{
+    u32 i;
+
+    if (source == NULL || size != Sprite_GetStateSize())
+        return FALSE;
+    sSpriteStateFailureOffset = 0;
+    sSpriteStateFailureAddress = 0;
+    for (i = 0; i < ARRAY_COUNT(sSpriteStoredCallbacks); i++)
+    {
+        struct HostPersistentAddress callback;
+        SpriteCallback resolved;
+
+        memcpy(&callback, (const u8 *)source + i * sizeof(callback), sizeof(callback));
+        if (!HostResolvePersistentFunction(&callback, &resolved, sizeof(resolved)))
+        {
+            sSpriteStateFailureOffset = i * sizeof(callback);
+            memcpy(&sSpriteStateFailureAddress, &callback, sizeof(callback));
+            return FALSE;
+        }
+    }
+    return TRUE;
+}
+
+bool32 Sprite_LoadState(const void *source, u32 size)
+{
+    SpriteCallback restored[MAX_SPRITES + 1];
+    u32 i;
+
+    if (!Sprite_ValidateState(source, size))
+        return FALSE;
+    for (i = 0; i < ARRAY_COUNT(restored); i++)
+    {
+        struct HostPersistentAddress callback;
+
+        memcpy(&callback, (const u8 *)source + i * sizeof(callback), sizeof(callback));
+        if (!HostResolvePersistentFunction(&callback, &restored[i], sizeof(restored[i])))
+            return FALSE;
+    }
+    memcpy(sSpriteStoredCallbacks, restored, sizeof(restored));
+    return TRUE;
+}
+
+bool32 Sprite_GetStateFailure(u32 *offset, uintptr_t *address)
+{
+    if (offset == NULL || address == NULL || sSpriteStateFailureAddress == 0)
+        return FALSE;
+    *offset = sSpriteStateFailureOffset;
+    *address = sSpriteStateFailureAddress;
+    return TRUE;
+}
+#endif
+
+#if !defined(LINUX64) || !LINUX64
+u32 Sprite_GetStateSize(void)
+{
+    return 0;
+}
+
+bool32 Sprite_SaveState(void *dest, u32 size)
+{
+    (void)dest;
+    return size == 0;
+}
+
+bool32 Sprite_ValidateState(const void *source, u32 size)
+{
+    (void)source;
+    return size == 0;
+}
+
+bool32 Sprite_LoadState(const void *source, u32 size)
+{
+    (void)source;
+    return size == 0;
+}
+
+bool32 Sprite_GetStateFailure(u32 *offset, uintptr_t *address)
+{
+    (void)offset;
+    (void)address;
+    return FALSE;
+}
+#endif
 
 void CalcCenterToCornerVec(struct Sprite *sprite, u8 shape, u8 size, u8 affineMode)
 {

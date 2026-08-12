@@ -28,6 +28,9 @@
 #include "gba/flash_internal.h"
 #include "platform/dma.h"
 #include "platform/framedraw.h"
+#include "platform/desktop_profiles.h"
+#include "platform/desktop_scheduler.h"
+#include "platform/native_state.h"
 
 extern void (*const gIntrTable[])(void);
 
@@ -81,6 +84,15 @@ static void StoreSaveFile(void);
 static void CloseSaveFile(void);
 
 static void UpdateInternalClock(void);
+
+enum NativeStateRequest
+{
+    NATIVE_STATE_REQUEST_NONE,
+    NATIVE_STATE_REQUEST_SAVE,
+    NATIVE_STATE_REQUEST_LOAD,
+};
+
+static enum NativeStateRequest sNativeStateRequest;
 
 #ifdef __ANDROID__
 static void HandleTouchEvent(const SDL_TouchFingerEvent *event);
@@ -302,6 +314,32 @@ int main(int argc, char **argv)
             {
                 if (SDL_AtomicGet(&isFrameAvailable))
                 {
+                    if (sNativeStateRequest != NATIVE_STATE_REQUEST_NONE)
+                    {
+                        enum NativeStateResult result;
+
+                        if (sNativeStateRequest == NATIVE_STATE_REQUEST_SAVE)
+                            result = NativeState_Save(PLATFORM_STATE_QUICK_SLOT);
+                        else
+                            result = NativeState_Load(PLATFORM_STATE_QUICK_SLOT);
+                        if (result == NATIVE_STATE_OK)
+                        {
+                            char statePath[512];
+
+                            if (!Platform_ProfileGetStatePath(PLATFORM_STATE_QUICK_SLOT,
+                                                              statePath, sizeof(statePath)))
+                                strcpy(statePath, "<state path unavailable>");
+                            fprintf(stderr, "native state %s: %s\n",
+                                    sNativeStateRequest == NATIVE_STATE_REQUEST_SAVE ? "saved" : "loaded",
+                                    statePath);
+                        }
+                        else
+                            fprintf(stderr, "native state %s failed: %s\n",
+                                    sNativeStateRequest == NATIVE_STATE_REQUEST_SAVE ? "save" : "load",
+                                    NativeState_GetLastError());
+                        fflush(stderr);
+                        sNativeStateRequest = NATIVE_STATE_REQUEST_NONE;
+                    }
                     VDraw(sdlTexture);
                     SDL_RenderClear(sdlRenderer);
 #if defined(NATIVE_LINUX) || defined(_WIN32)
@@ -367,6 +405,8 @@ int main(int argc, char **argv)
                     REG_DISPSTAT &= ~INTR_FLAG_VBLANK;
 
                     SDL_SemPost(vBlankSemaphore);
+
+                    Platform_SchedulerAdvanceFrame();
 
                     accumulator -= dt;
                 }
@@ -985,6 +1025,12 @@ void ProcessEvents(void)
                 {
                     paused = !paused;
                 }
+                break;
+            case SDLK_F5:
+                sNativeStateRequest = NATIVE_STATE_REQUEST_SAVE;
+                break;
+            case SDLK_F9:
+                sNativeStateRequest = NATIVE_STATE_REQUEST_LOAD;
                 break;
             case SDLK_SPACE:
                 if (!speedUp)

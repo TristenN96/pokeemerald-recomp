@@ -12,15 +12,233 @@ extern void abort(void);
 #define HOST_HANDLE_INDEX_MASK 0x0000FFFFu
 #define HOST_HANDLE_CAPACITY (HOST_HANDLE_INDEX_MASK + 1)
 
-static const void *sHostPointers[HOST_HANDLE_CAPACITY];
-static unsigned char sHostFunctions[HOST_HANDLE_CAPACITY][sizeof(uintptr_t)];
-static u32 sNextHostHandle = 1;
-static u32 sNextHostFunctionHandle = 1;
+#define HOST_PERSISTENT_DATA_LOGICAL 0x50444C47u /* PDLG */
+#define HOST_PERSISTENT_DATA_IMAGE   0x5044494Du /* PDIM */
+#define HOST_PERSISTENT_FUNC_LOGICAL 0x50464C47u /* PFLG */
+#define HOST_PERSISTENT_FUNC_IMAGE   0x5046494Du /* PFIM */
+#define HOST_PERSISTENT_FUNCTION_CAPACITY 16384
+
+struct HostPersistentFunctionEntry
+{
+    u32 stableId;
+    uintptr_t native;
+};
+
+HOST_DATA static const void *sHostPointers[HOST_HANDLE_CAPACITY];
+HOST_DATA static unsigned char sHostFunctions[HOST_HANDLE_CAPACITY][sizeof(uintptr_t)];
+HOST_DATA static u32 sNextHostHandle = 1;
+HOST_DATA static u32 sNextHostFunctionHandle = 1;
+#if defined(LINUX64) && LINUX64
+HOST_DATA static struct HostPersistentFunctionEntry sPersistentFunctions[HOST_PERSISTENT_FUNCTION_CAPACITY];
+HOST_DATA static u32 sPersistentFunctionCount;
+
+extern unsigned char __executable_start[];
+extern unsigned char _end[];
+extern unsigned char __start_host_data[];
+extern unsigned char __stop_host_data[];
+#endif
+
+STATIC_ASSERT(sizeof(GbaAddr) == 4, GbaAddrSize);
+STATIC_ASSERT(sizeof(GbaOffset) == 4, GbaOffsetSize);
+STATIC_ASSERT(sizeof(struct HostPersistentAddress) == 8, HostPersistentAddressSize);
 
 static void HostMemoryAbort(const char *message, uintptr_t addr)
 {
     fprintf(stderr, "host memory error: %s (address=0x%zx)\n", message, addr);
     abort();
+}
+
+#if defined(LINUX64) && LINUX64
+static bool32 HostIsGameImageAddress(uintptr_t native)
+{
+    return native >= (uintptr_t)__executable_start
+        && native < (uintptr_t)_end
+        && !(native >= (uintptr_t)__start_host_data
+          && native < (uintptr_t)__stop_host_data);
+}
+
+static bool32 HostIsExecutableAddress(uintptr_t native)
+{
+#if defined(__linux__)
+    FILE *maps = fopen("/proc/self/maps", "r");
+    char line[256];
+
+    if (maps == NULL)
+        return FALSE;
+    while (fgets(line, sizeof(line), maps) != NULL)
+    {
+        unsigned long begin;
+        unsigned long end;
+        char permissions[5];
+
+        if (sscanf(line, "%lx-%lx %4s", &begin, &end, permissions) == 3
+         && native >= (uintptr_t)begin && native < (uintptr_t)end)
+        {
+            bool32 executable = permissions[2] == 'x';
+            fclose(maps);
+            return executable;
+        }
+    }
+    fclose(maps);
+    return FALSE;
+#else
+    return HostIsGameImageAddress(native);
+#endif
+}
+
+static bool32 HostRegisterPersistentFunction(u32 stableId, uintptr_t native)
+{
+    u32 i;
+
+    for (i = 0; i < sPersistentFunctionCount; i++)
+    {
+        if (sPersistentFunctions[i].stableId == stableId)
+            return sPersistentFunctions[i].native == native;
+        if (sPersistentFunctions[i].native == native)
+            return FALSE;
+    }
+    if (sPersistentFunctionCount >= HOST_PERSISTENT_FUNCTION_CAPACITY)
+        return FALSE;
+    sPersistentFunctions[sPersistentFunctionCount].stableId = stableId;
+    sPersistentFunctions[sPersistentFunctionCount].native = native;
+    sPersistentFunctionCount++;
+    return TRUE;
+}
+#endif
+
+bool32 HostPointerToPersistentAddress(const void *ptr, struct HostPersistentAddress *persistent)
+{
+    uintptr_t native = (uintptr_t)ptr;
+
+    if (persistent == NULL)
+        return FALSE;
+    persistent->value = 0;
+    persistent->kind = 0;
+    if (ptr == NULL)
+        return TRUE;
+#if defined(LINUX64) && LINUX64
+    if (!HostIsGameImageAddress(native) || HostIsExecutableAddress(native)
+     || native - (uintptr_t)__executable_start > UINT32_MAX)
+        return FALSE;
+    persistent->value = (u32)(native - (uintptr_t)__executable_start);
+    persistent->kind = HOST_PERSISTENT_DATA_IMAGE;
+    return TRUE;
+#else
+    if (native > UINT32_MAX)
+        return FALSE;
+    persistent->value = (u32)native;
+    persistent->kind = HOST_PERSISTENT_DATA_LOGICAL;
+    return TRUE;
+#endif
+}
+
+bool32 HostResolvePersistentAddress(const struct HostPersistentAddress *persistent, void **ptr)
+{
+    uintptr_t native;
+
+    if (persistent == NULL || ptr == NULL)
+        return FALSE;
+    if (persistent->kind == 0 && persistent->value == 0)
+    {
+        *ptr = NULL;
+        return TRUE;
+    }
+#if defined(LINUX64) && LINUX64
+    if (persistent->kind == HOST_PERSISTENT_DATA_LOGICAL)
+        native = persistent->value;
+    else if (persistent->kind == HOST_PERSISTENT_DATA_IMAGE
+          && persistent->value <= UINTPTR_MAX - (uintptr_t)__executable_start)
+        native = (uintptr_t)__executable_start + persistent->value;
+    else
+        return FALSE;
+    if (!HostIsGameImageAddress(native) || HostIsExecutableAddress(native))
+        return FALSE;
+#else
+    if (persistent->kind != HOST_PERSISTENT_DATA_LOGICAL)
+        return FALSE;
+    native = persistent->value;
+#endif
+    *ptr = (void *)native;
+    return TRUE;
+}
+
+bool32 HostPersistentAddressIsData(const struct HostPersistentAddress *persistent)
+{
+    return persistent != NULL
+        && ((persistent->kind == 0 && persistent->value == 0)
+         || persistent->kind == HOST_PERSISTENT_DATA_LOGICAL
+         || persistent->kind == HOST_PERSISTENT_DATA_IMAGE);
+}
+
+bool32 HostFunctionToPersistentAddress(const void *functionPointerBytes, size_t size,
+                                       struct HostPersistentAddress *persistent)
+{
+    uintptr_t native = 0;
+
+    if (functionPointerBytes == NULL || persistent == NULL
+     || size == 0 || size > sizeof(native))
+        return FALSE;
+    memcpy(&native, functionPointerBytes, size);
+    persistent->value = 0;
+    persistent->kind = 0;
+    if (native == 0)
+        return TRUE;
+#if defined(LINUX64) && LINUX64
+    if (!HostIsGameImageAddress(native) || !HostIsExecutableAddress(native)
+     || native - (uintptr_t)__executable_start > UINT32_MAX)
+        return FALSE;
+    persistent->value = (u32)(native - (uintptr_t)__executable_start);
+    persistent->kind = HOST_PERSISTENT_FUNC_IMAGE;
+    return HostRegisterPersistentFunction(persistent->value, native);
+#else
+    if (native > UINT32_MAX)
+        return FALSE;
+    persistent->value = (u32)native;
+    persistent->kind = HOST_PERSISTENT_FUNC_LOGICAL;
+    return TRUE;
+#endif
+}
+
+bool32 HostResolvePersistentFunction(const struct HostPersistentAddress *persistent,
+                                     void *functionPointerBytes, size_t size)
+{
+    uintptr_t native;
+
+    if (persistent == NULL || functionPointerBytes == NULL
+     || size == 0 || size > sizeof(native))
+        return FALSE;
+    if (persistent->kind == 0 && persistent->value == 0)
+    {
+        memset(functionPointerBytes, 0, size);
+        return TRUE;
+    }
+#if defined(LINUX64) && LINUX64
+    if (persistent->kind == HOST_PERSISTENT_FUNC_LOGICAL)
+        native = persistent->value;
+    else if (persistent->kind == HOST_PERSISTENT_FUNC_IMAGE
+          && persistent->value <= UINTPTR_MAX - (uintptr_t)__executable_start)
+        native = (uintptr_t)__executable_start + persistent->value;
+    else
+        return FALSE;
+    if (!HostIsGameImageAddress(native) || !HostIsExecutableAddress(native)
+     || !HostRegisterPersistentFunction(persistent->value, native))
+        return FALSE;
+#else
+    if (persistent->kind != HOST_PERSISTENT_FUNC_LOGICAL)
+        return FALSE;
+    native = persistent->value;
+#endif
+    memset(functionPointerBytes, 0, size);
+    memcpy(functionPointerBytes, &native, size);
+    return TRUE;
+}
+
+bool32 HostPersistentAddressIsFunction(const struct HostPersistentAddress *persistent)
+{
+    return persistent != NULL
+        && ((persistent->kind == 0 && persistent->value == 0)
+         || persistent->kind == HOST_PERSISTENT_FUNC_LOGICAL
+         || persistent->kind == HOST_PERSISTENT_FUNC_IMAGE);
 }
 
 GbaAddr HostPointerToGbaAddr(const void *ptr)
@@ -81,6 +299,14 @@ void *HostResolveGbaAddr(GbaAddr addr)
     return (void *)(uintptr_t)addr;
 }
 
+void *HostResolveGbaTableEntry(const GbaAddr *table, u32 index)
+{
+    GbaAddr logicalAddr;
+
+    memcpy(&logicalAddr, &table[index], sizeof(logicalAddr));
+    return HostResolveGbaAddr(logicalAddr);
+}
+
 GbaAddr HostFunctionToGbaAddr(const void *functionPointerBytes, size_t size)
 {
     uintptr_t native = 0;
@@ -133,6 +359,40 @@ void HostResolveFunction(GbaAddr addr, void *functionPointerBytes, size_t size)
     native = addr;
     memset(functionPointerBytes, 0, size);
     memcpy(functionPointerBytes, &native, size);
+}
+
+bool32 HostAddressIsRuntimeHandle(GbaAddr addr)
+{
+#if UINTPTR_MAX > UINT32_MAX
+    return (addr & 0xFFFF0000u) == HOST_FUNCTION_HANDLE_BASE
+        || (addr & 0xFFFF0000u) == HOST_HANDLE_BASE;
+#else
+    (void)addr;
+    return FALSE;
+#endif
+}
+
+bool32 HostAddressIsRegisteredRuntimeHandle(GbaAddr addr)
+{
+#if UINTPTR_MAX > UINT32_MAX
+    u32 index = addr & HOST_HANDLE_INDEX_MASK;
+
+    if ((addr & 0xFFFF0000u) == HOST_HANDLE_BASE)
+        return index != 0 && index < sNextHostHandle && sHostPointers[index] != NULL;
+    if ((addr & 0xFFFF0000u) == HOST_FUNCTION_HANDLE_BASE)
+        return index != 0 && index < sNextHostFunctionHandle;
+#else
+    (void)addr;
+#endif
+    return FALSE;
+}
+
+void HostMemoryGetHandleCounters(u32 *dataHandles, u32 *functionHandles)
+{
+    if (dataHandles != NULL)
+        *dataHandles = sNextHostHandle - 1;
+    if (functionHandles != NULL)
+        *functionHandles = sNextHostFunctionHandle - 1;
 }
 
 void HostAssertMemoryRange(const void *ptr, size_t size, const char *owner)
