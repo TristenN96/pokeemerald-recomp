@@ -33,6 +33,7 @@
 #include "random.h"
 #include "save_location.h"
 #include "script.h"
+#include "platform/host_memory.h"
 #include "script_pokemon_util.h"
 #include "sound.h"
 #include "start_menu.h"
@@ -280,6 +281,24 @@ static void ItemPrintFunc_PossibleGroupMembers(u8, u32, u8);
 static void ListMenuItemPrintFunc_UnionRoomGroups(u8, u32, u8);
 static void TradeBoardListMenuItemPrintFunc(u8, u32, u8);
 static void ItemPrintFunc_EmptyList(u8, u32, u8);
+
+static struct RfuIncomingPlayerList *GetRfuTaskList(u8 taskId, u8 index)
+{
+    GbaAddr address;
+
+    // The original task data contains two four-byte logical pointers at
+    // offsets 0 and 4.  Do not use a native pointer-to-pointer here: on x64
+    // its second element would be at offset 8 and would overlap data[4].
+    memcpy(&address, &gTasks[taskId].data[index * 2], sizeof(address));
+    return HostResolveGbaAddr(address);
+}
+
+static void SetRfuTaskList(u8 taskId, u8 index, struct RfuIncomingPlayerList *list)
+{
+    GbaAddr address = HostPointerToGbaAddr(list);
+
+    memcpy(&gTasks[taskId].data[index * 2], &address, sizeof(address));
+}
 
 #include "data/union_room.h"
 
@@ -3468,7 +3487,8 @@ static void Task_SearchForChildOrParent(u8 taskId)
 {
     s32 i, j;
     struct RfuPlayerData rfu;
-    struct RfuIncomingPlayerList **list = (void *) gTasks[taskId].data;
+    struct RfuIncomingPlayerList *parentList = GetRfuTaskList(taskId, 0);
+    struct RfuIncomingPlayerList *childList = GetRfuTaskList(taskId, 1);
     bool8 isParent;
 
     for (i = 0; i < RFU_CHILD_MAX; i++)
@@ -3484,16 +3504,16 @@ static void Task_SearchForChildOrParent(u8 taskId)
         {
             for (j = 0; j < i; j++)
             {
-                if (!ArePlayersDifferent(&list[1]->players[j].rfu, &rfu))
+                if (!ArePlayersDifferent(&childList->players[j].rfu, &rfu))
                     rfu = sUnionRoomPlayer_DummyRfu;
             }
-            list[1]->players[i].rfu = rfu;
-            list[1]->players[i].active = ArePlayersDifferent(&list[1]->players[i].rfu, &sUnionRoomPlayer_DummyRfu);
+            childList->players[i].rfu = rfu;
+            childList->players[i].active = ArePlayersDifferent(&childList->players[i].rfu, &sUnionRoomPlayer_DummyRfu);
         }
         else
         {
-            list[0]->players[i].rfu = rfu;
-            list[0]->players[i].active = ArePlayersDifferent(&list[0]->players[i].rfu, &sUnionRoomPlayer_DummyRfu);
+            parentList->players[i].rfu = rfu;
+            parentList->players[i].active = ArePlayersDifferent(&parentList->players[i].rfu, &sUnionRoomPlayer_DummyRfu);
         }
     }
 }
@@ -3501,9 +3521,8 @@ static void Task_SearchForChildOrParent(u8 taskId)
 static u8 CreateTask_SearchForChildOrParent(struct RfuIncomingPlayerList *parentList, struct RfuIncomingPlayerList *childList, u32 linkGroup)
 {
     u8 taskId = CreateTask(Task_SearchForChildOrParent, 0);
-    struct RfuIncomingPlayerList **data = (void *)gTasks[taskId].data;
-    data[0] = parentList;
-    data[1] = childList;
+    SetRfuTaskList(taskId, 0, parentList);
+    SetRfuTaskList(taskId, 1, childList);
     gTasks[taskId].data[4] = linkGroup;
     return taskId;
 }
@@ -3511,21 +3530,21 @@ static u8 CreateTask_SearchForChildOrParent(struct RfuIncomingPlayerList *parent
 static void Task_ListenForCompatiblePartners(u8 taskId)
 {
     s32 i, j;
-    struct RfuIncomingPlayerList **list = (void *) gTasks[taskId].data;
+    struct RfuIncomingPlayerList *list = GetRfuTaskList(taskId, 0);
 
     for (i = 0; i < RFU_CHILD_MAX; i++)
     {
-        Rfu_GetCompatiblePlayerData(&list[0]->players[i].rfu.data, list[0]->players[i].rfu.name, i);
-        if (!IsPartnerActivityAcceptable(list[0]->players[i].rfu.data.activity, gTasks[taskId].data[2]))
+        Rfu_GetCompatiblePlayerData(&list->players[i].rfu.data, list->players[i].rfu.name, i);
+        if (!IsPartnerActivityAcceptable(list->players[i].rfu.data.activity, gTasks[taskId].data[2]))
         {
-            list[0]->players[i].rfu = sUnionRoomPlayer_DummyRfu;
+            list->players[i].rfu = sUnionRoomPlayer_DummyRfu;
         }
         for (j = 0; j < i; j++)
         {
-            if (!ArePlayersDifferent(&list[0]->players[j].rfu, &list[0]->players[i].rfu))
-                list[0]->players[i].rfu = sUnionRoomPlayer_DummyRfu;
+            if (!ArePlayersDifferent(&list->players[j].rfu, &list->players[i].rfu))
+                list->players[i].rfu = sUnionRoomPlayer_DummyRfu;
         }
-        list[0]->players[i].active = ArePlayersDifferent(&list[0]->players[i].rfu, &sUnionRoomPlayer_DummyRfu);
+        list->players[i].active = ArePlayersDifferent(&list->players[i].rfu, &sUnionRoomPlayer_DummyRfu);
     }
 }
 
@@ -3554,22 +3573,21 @@ static bool32 HasWonderCardOrNewsByLinkGroup(struct RfuGameData *data, s16 linkG
 static void Task_ListenForWonderDistributor(u8 taskId)
 {
     s32 i;
-    struct RfuIncomingPlayerList **list = (void *) gTasks[taskId].data;
+    struct RfuIncomingPlayerList *list = GetRfuTaskList(taskId, 0);
 
     for (i = 0; i < RFU_CHILD_MAX; i++)
     {
-        if (Rfu_GetWonderDistributorPlayerData(&list[0]->players[i].rfu.data, list[0]->players[i].rfu.name, i))
-            HasWonderCardOrNewsByLinkGroup(&list[0]->players[i].rfu.data, gTasks[taskId].data[2]);
+        if (Rfu_GetWonderDistributorPlayerData(&list->players[i].rfu.data, list->players[i].rfu.name, i))
+            HasWonderCardOrNewsByLinkGroup(&list->players[i].rfu.data, gTasks[taskId].data[2]);
 
-        list[0]->players[i].active = ArePlayersDifferent(&list[0]->players[i].rfu, &sUnionRoomPlayer_DummyRfu);
+        list->players[i].active = ArePlayersDifferent(&list->players[i].rfu, &sUnionRoomPlayer_DummyRfu);
     }
 }
 
 static u8 CreateTask_ListenForCompatiblePartners(struct RfuIncomingPlayerList *list, u32 linkGroup)
 {
     u8 taskId = CreateTask(Task_ListenForCompatiblePartners, 0);
-    struct RfuIncomingPlayerList **oldList = (void *) gTasks[taskId].data;
-    oldList[0] = list;
+    SetRfuTaskList(taskId, 0, list);
     gTasks[taskId].data[2] = linkGroup;
     return taskId;
 }
@@ -3577,8 +3595,7 @@ static u8 CreateTask_ListenForCompatiblePartners(struct RfuIncomingPlayerList *l
 static u8 CreateTask_ListenForWonderDistributor(struct RfuIncomingPlayerList *list, u32 linkGroup)
 {
     u8 taskId = CreateTask(Task_ListenForWonderDistributor, 0);
-    struct RfuIncomingPlayerList **oldList = (void *) gTasks[taskId].data;
-    oldList[0] = list;
+    SetRfuTaskList(taskId, 0, list);
     gTasks[taskId].data[2] = linkGroup;
     return taskId;
 }

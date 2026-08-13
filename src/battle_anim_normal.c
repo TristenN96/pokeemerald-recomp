@@ -16,6 +16,7 @@ static void AnimCirclingSparkle(struct Sprite *);
 static void AnimShakeMonOrBattlePlatforms(struct Sprite *);
 static void AnimShakeMonOrBattlePlatforms_Step(struct Sprite *);
 static void AnimShakeMonOrBattlePlatforms_UpdateCoordOffsetEnabled(void);
+static u16 *GetAnimShakeMonOrBattlePlatformsTarget(struct Sprite *);
 static void AnimHitSplatBasic(struct Sprite *);
 static void AnimHitSplatPersistent(struct Sprite *);
 static void AnimHitSplatHandleInvert(struct Sprite *);
@@ -808,24 +809,23 @@ static void AnimShakeMonOrBattlePlatforms(struct Sprite *sprite)
     switch (gBattleAnimArgs[3])
     {
     case 0:
-        StoreSpriteCallbackInData6(sprite, (void *)&gBattle_BG3_X);
+        StorePointerInVars(&sprite->data[6], &sprite->data[7], &gBattle_BG3_X);
         break;
     case 1:
-        StoreSpriteCallbackInData6(sprite, (void *)&gBattle_BG3_Y);
+        StorePointerInVars(&sprite->data[6], &sprite->data[7], &gBattle_BG3_Y);
         break;
     case 2:
-        StoreSpriteCallbackInData6(sprite, (void *)&gSpriteCoordOffsetX);
+        StorePointerInVars(&sprite->data[6], &sprite->data[7], &gSpriteCoordOffsetX);
         break;
     default:
-        StoreSpriteCallbackInData6(sprite, (void *)&gSpriteCoordOffsetY);
+        StorePointerInVars(&sprite->data[6], &sprite->data[7], &gSpriteCoordOffsetY);
         break;
     }
 
-#ifndef PORTABLE
-    sprite->data[4] = *(u16 *)(sprite->data[6] | (sprite->data[7] << 16));
-#else
-    sprite->data[4] = *(u16 *)LoadPointerFromVars(sprite->data[6], sprite->data[7]);
-#endif
+    // data[6]/data[7] hold a GBA-width address pair. They are not callback
+    // storage: Linux64 keeps callbacks in a native sidecar and clears these
+    // two fields, which would turn the old callback-shaped call into NULL.
+    sprite->data[4] = *GetAnimShakeMonOrBattlePlatformsTarget(sprite);
     sprite->data[5] = gBattleAnimArgs[3];
     var0 = sprite->data[5] - 2;
     if (var0 < 2)
@@ -849,21 +849,13 @@ static void AnimShakeMonOrBattlePlatforms_Step(struct Sprite *sprite)
         else
         {
             sprite->data[1] = sprite->data[2];
-#ifndef PORTABLE
-            *(u16 *)(sprite->data[6] | (sprite->data[7] << 16)) += sprite->data[0];
-#else
-            *(u16 *)LoadPointerFromVars(sprite->data[6], sprite->data[7]) += sprite->data[0];
-#endif
+            *GetAnimShakeMonOrBattlePlatformsTarget(sprite) += sprite->data[0];
             sprite->data[0] = -sprite->data[0];
         }
     }
     else
     {
-#ifndef PORTABLE
-        *(u16 *)(sprite->data[6] | (sprite->data[7] << 16)) = sprite->data[4];
-#else
-        *(u16 *)LoadPointerFromVars(sprite->data[6], sprite->data[7]) = sprite->data[4];
-#endif
+        *GetAnimShakeMonOrBattlePlatformsTarget(sprite) = sprite->data[4];
         var0 = sprite->data[5] - 2;
         if (var0 < 2)
         {
@@ -873,6 +865,21 @@ static void AnimShakeMonOrBattlePlatforms_Step(struct Sprite *sprite)
 
         DestroyAnimSprite(sprite);
     }
+}
+
+// All four targets above are 16-bit GBA state variables. Keep their address
+// in the sprite as two s16 fields, then resolve the GBA address at use time on
+// native hosts instead of reconstructing a truncated host pointer.
+static u16 *GetAnimShakeMonOrBattlePlatformsTarget(struct Sprite *sprite)
+{
+#ifndef PORTABLE
+    return (u16 *)(uintptr_t)((u16)sprite->data[6] | ((u16)sprite->data[7] << 16));
+#else
+    u16 *target = LoadPointerFromVars(sprite->data[6], sprite->data[7]);
+
+    AGB_ASSERT(target != NULL);
+    return target;
+#endif
 }
 
 static void AnimShakeMonOrBattlePlatforms_UpdateCoordOffsetEnabled(void)

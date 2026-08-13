@@ -24,6 +24,7 @@
 #include "global.h"
 #include "platform.h"
 #include "rtc.h"
+#include "item.h"
 #include "gba/defines.h"
 #include "gba/m4a_internal.h"
 #include "cgb_audio.h"
@@ -34,6 +35,7 @@
 #include "platform/desktop_clock.h"
 #include "platform/desktop_audio.h"
 #include "platform/desktop_input.h"
+#include "platform/desktop_runtime.h"
 #include "platform/desktop_scheduler.h"
 #include "platform/desktop_video.h"
 #include "platform/desktop_storage.h"
@@ -201,9 +203,86 @@ static void PacePresentation(u64 *deadline)
     }
 }
 
+#if defined(NATIVE_LINUX) || defined(WINDOWS64)
+static void HandleNativeDebugActions(const struct PlatformInputActions *input)
+{
+    if (input->debugAddRareCandies && Platform_SchedulerWaitForFrame(1000))
+    {
+        /* Temporary native-only developer/testing shortcut. Keep the grant on
+         * the normal item API and execute it while the game thread is parked
+         * at its VBlank boundary. */
+        if (AddBagItem(ITEM_RARE_CANDY, 99) == TRUE)
+        {
+            printf("Debug: added 99 Rare Candies\n");
+            fflush(stdout);
+        }
+    }
+}
+#endif
+
 #ifdef __ANDROID__
 void Platform_HandleTouchEvent(const SDL_TouchFingerEvent *event);
 static void DrawTouchControls(void);
+#endif
+
+#if defined(NATIVE_LINUX) || defined(_WIN32)
+static bool32 NativeStateFileContainsPointer(u8 slot, const void *pointer)
+{
+    char path[1024];
+    FILE *file;
+    long fileSize;
+    u8 *bytes;
+    uintptr_t value = (uintptr_t)pointer;
+    long i;
+    bool32 found = FALSE;
+
+    if (!Platform_ProfileGetStatePath(slot, path, sizeof(path)))
+        return TRUE;
+    file = fopen(path, "rb");
+    if (file == NULL || fseek(file, 0, SEEK_END) != 0)
+    {
+        if (file != NULL)
+            fclose(file);
+        return TRUE;
+    }
+    fileSize = ftell(file);
+    if (fileSize < 0 || fseek(file, 0, SEEK_SET) != 0)
+    {
+        fclose(file);
+        return TRUE;
+    }
+    bytes = malloc((size_t)fileSize);
+    if (bytes == NULL || fread(bytes, 1, (size_t)fileSize, file) != (size_t)fileSize)
+        found = TRUE;
+    else
+    {
+        for (i = 0; i + (long)sizeof(value) <= fileSize; i++)
+        {
+            uintptr_t candidate;
+            memcpy(&candidate, bytes + i, sizeof(candidate));
+            if (candidate == value)
+            {
+                found = TRUE;
+                break;
+            }
+        }
+    }
+    free(bytes);
+    fclose(file);
+    return found;
+}
+
+static bool32 NativeStatePointerInGameRange(const void *pointer)
+{
+    uintptr_t address = (uintptr_t)pointer;
+    uintptr_t start;
+    uintptr_t end;
+
+    return (Platform_RuntimeGetGameBssRange(&start, &end)
+         && address >= start && address < end)
+        || (Platform_RuntimeGetGameDataRange(&start, &end)
+         && address >= start && address < end);
+}
 #endif
 
 int main(int argc, char **argv)
@@ -212,6 +291,7 @@ int main(int argc, char **argv)
     const char *dataRootOverride = NULL;
     bool32 verifyGameData = FALSE;
     bool32 printDataPath = FALSE;
+    bool32 nativeStateSelfTest = FALSE;
     bool32 utilityMode;
     char *prefPath = NULL;
     int argIndex;
@@ -231,16 +311,19 @@ int main(int argc, char **argv)
             verifyGameData = TRUE;
         else if (strcmp(argv[argIndex], "--print-data-path") == 0)
             printDataPath = TRUE;
+        else if (strcmp(argv[argIndex], "--native-state-self-test") == 0)
+            nativeStateSelfTest = TRUE;
         else
         {
             fprintf(stderr, "Usage: %s [--data-root PATH] [--import-rom FILE] "
-                            "[--verify-game-data] [--print-data-path]\n", argv[0]);
+                            "[--verify-game-data] [--print-data-path] "
+                            "[--native-state-self-test]\n", argv[0]);
             return 2;
         }
     }
     if (dataRootOverride == NULL || dataRootOverride[0] == '\0')
         dataRootOverride = getenv("POKEEMERALD_DATA_ROOT");
-    utilityMode = importRomPath != NULL || verifyGameData || printDataPath;
+    utilityMode = importRomPath != NULL || verifyGameData || printDataPath || nativeStateSelfTest;
 
 #ifdef __ANDROID__
     SDL_setenv("SDL_AUDIODRIVER", "openslES", 1);
@@ -267,10 +350,9 @@ int main(int argc, char **argv)
     Platform_StorageInit(dataRootOverride != NULL && dataRootOverride[0] != '\0'
                        ? dataRootOverride : prefPath);
     if (!utilityMode)
-    {
         Platform_ConfigLoad();
+    if (!utilityMode || nativeStateSelfTest)
         Platform_ClockInit();
-    }
     if (prefPath != NULL)
         SDL_free(prefPath);
 
@@ -323,6 +405,62 @@ int main(int argc, char **argv)
         Platform_StorageShutdown();
         SDL_Quit();
         return valid ? 0 : 2;
+    }
+
+    if (nativeStateSelfTest)
+    {
+        static const u8 slots[] = {PLATFORM_STATE_QUICK_SLOT, 1};
+        const void *filePointers[] = {stdin, stdout, stderr};
+        char statePath[1024];
+        u32 i;
+
+        if (!Platform_ProfileInit()
+         || !Platform_ProfileLoadSelectedSave(FLASH_BASE, sizeof(FLASH_BASE)))
+        {
+            fprintf(stderr, "Native state self-test could not initialize a profile\n");
+            Platform_StorageShutdown();
+            SDL_Quit();
+            return 1;
+        }
+        if (NativeStatePointerInGameRange(&stdin)
+         || NativeStatePointerInGameRange(&stdout)
+         || NativeStatePointerInGameRange(&stderr))
+        {
+            fprintf(stderr, "Native state self-test found a libc FILE object in game state\n");
+            Platform_StorageShutdown();
+            SDL_Quit();
+            return 1;
+        }
+        fprintf(stdout, "NATIVE_STATE_FILE_POINTERS stdin=%p stdout=%p stderr=%p\n",
+                (void *)stdin, (void *)stdout, (void *)stderr);
+        for (i = 0; i < ARRAY_COUNT(slots); i++)
+        {
+            if (Platform_StateSave(slots[i]) == PLATFORM_STATE_OPERATION_FAILED)
+            {
+                fprintf(stderr, "Native state self-test failed for slot %u: %s\n",
+                        slots[i], Platform_StateGetLastError());
+                Platform_StorageShutdown();
+                SDL_Quit();
+                return 1;
+            }
+            if (!Platform_ProfileGetStatePath(slots[i], statePath, sizeof(statePath))
+             || !Platform_StorageFileExists(statePath)
+             || NativeStateFileContainsPointer(slots[i], filePointers[0])
+             || NativeStateFileContainsPointer(slots[i], filePointers[1])
+             || NativeStateFileContainsPointer(slots[i], filePointers[2])
+             || Platform_StateLoad(slots[i]) != PLATFORM_STATE_OPERATION_OK)
+            {
+                fprintf(stderr, "Native state self-test failed for slot %u: %s\n",
+                        slots[i], Platform_StateGetLastError());
+                Platform_StorageShutdown();
+                SDL_Quit();
+                return 1;
+            }
+        }
+        fprintf(stdout, "Native state self-test passed (quick and slot 1)\n");
+        Platform_StorageShutdown();
+        SDL_Quit();
+        return 0;
     }
 
     if (!Platform_VideoInit())
@@ -514,6 +652,9 @@ int main(int argc, char **argv)
     {
         struct PlatformInputActions input;
         Platform_InputPoll(&input);
+#if defined(NATIVE_LINUX) || defined(WINDOWS64)
+        HandleNativeDebugActions(&input);
+#endif
         if (input.quit)
             isRunning = false;
         if (input.quickSave)

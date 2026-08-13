@@ -35,6 +35,8 @@ static void CreateBattlerTrace(struct Task *task, u8 taskId);
 
 EWRAM_DATA static union AffineAnimCmd *sAnimTaskAffineAnim = NULL;
 
+STATIC_ASSERT(sizeof(GbaAddr) == sizeof(s16) * 2, BattleAnimPointerVarsWidth);
+
 static const struct UCoords8 sBattlerCoords[][MAX_BATTLERS_COUNT] =
 {
     { // Single battle
@@ -1959,6 +1961,8 @@ static u16 GetBattlerYDeltaFromSpriteId(u8 spriteId)
 void StorePointerInVars(s16 *lo, s16 *hi, const void *ptr)
 {
     GbaAddr address = HostPointerToGbaAddr(ptr);
+
+    AGB_ASSERT(lo != NULL && hi != NULL);
     *lo = address & 0xffff;
     *hi = address >> 16;
 }

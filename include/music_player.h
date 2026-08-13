@@ -5,6 +5,18 @@
 //#include "m4a.h"
 #include "sound_mixer.h"
 
+// MP2K song control-flow and address operands are always GBA-width, even on
+// hosts whose native pointers are wider.
+#define MP2K_ADDRESS_OPERAND_SIZE sizeof(GbaAddr)
+
+static inline GbaAddr MP2KReadAddressOperand(const u8 *bytes)
+{
+    return (GbaAddr)bytes[0]
+        | ((GbaAddr)bytes[1] << 8)
+        | ((GbaAddr)bytes[2] << 16)
+        | ((GbaAddr)bytes[3] << 24);
+}
+
 #define PLAYER_UNLOCKED 0x68736D53
 #define PLAYER_LOCKED PLAYER_UNLOCKED+1
 

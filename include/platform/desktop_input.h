@@ -86,6 +86,10 @@ struct PlatformInputActions
     bool32 openStateManager;
     bool32 manualSave;
     bool32 quickLoad;
+#if defined(NATIVE_LINUX) || defined(WINDOWS64)
+    /* Temporary native-only developer/testing shortcut. */
+    bool32 debugAddRareCandies;
+#endif
     bool32 speedUpChanged;
     bool32 speedUp;
     u8 speed;

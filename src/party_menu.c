@@ -983,14 +983,14 @@ static bool8 DisplayPartyPokemonDataForMoveTutorOrEvolutionItem(u8 slot)
         if (gPartyMenu.action != PARTY_ACTION_USE_ITEM)
             return FALSE;
 
-        switch (CheckIfItemIsTMHMOrEvolutionStone(item))
+        switch (CheckIfItemIsTMHMOrEvolutionItem(item))
         {
         default:
             return FALSE;
         case 1: // TM/HM
             DisplayPartyPokemonDataToTeachMove(slot, item, 0);
             break;
-        case 2: // Evolution stone
+        case 2: // Evolution item
             if (!GetMonData(currentPokemon, MON_DATA_IS_EGG) && GetEvolutionTargetSpecies(currentPokemon, EVO_MODE_ITEM_CHECK, item) != SPECIES_NONE)
                 return FALSE;
             DisplayPartyPokemonDescriptionData(slot, PARTYBOX_DESC_NO_USE);

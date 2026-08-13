@@ -9,14 +9,14 @@
 #include "global.h"
 #include "platform/desktop_file_dialog.h"
 
-bool32 Platform_FileDialogSelectEmeraldRom(char *path, u32 pathSize)
+enum PlatformFileDialogResult Platform_FileDialogSelectEmeraldRom(char *path, u32 pathSize)
 {
     wchar_t widePath[32768] = L"";
     OPENFILENAMEW dialog;
     int length;
 
     if (path == NULL || pathSize < 2)
-        return FALSE;
+        return PLATFORM_FILE_DIALOG_FAILED;
     path[0] = '\0';
     ZeroMemory(&dialog, sizeof(dialog));
     dialog.lStructSize = sizeof(dialog);
@@ -29,15 +29,15 @@ bool32 Platform_FileDialogSelectEmeraldRom(char *path, u32 pathSize)
     dialog.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_HIDEREADONLY
                  | OFN_DONTADDTORECENT;
     if (!GetOpenFileNameW(&dialog))
-        return FALSE;
+        return PLATFORM_FILE_DIALOG_CANCELLED;
     length = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, widePath, -1,
                                  path, (int)pathSize, NULL, NULL);
     if (length <= 0)
     {
         path[0] = '\0';
-        return FALSE;
+        return PLATFORM_FILE_DIALOG_FAILED;
     }
-    return TRUE;
+    return PLATFORM_FILE_DIALOG_SELECTED;
 }
 
 #endif

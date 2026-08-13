@@ -14,6 +14,10 @@
 extern unsigned char __bss_start[];
 extern unsigned char __executable_start[];
 extern unsigned char _end[];
+extern unsigned char __start_game_bss[];
+extern unsigned char __stop_game_bss[];
+extern unsigned char __start_game_data[];
+extern unsigned char __stop_game_data[];
 
 bool32 Platform_RuntimeGetImageRange(uintptr_t *start, uintptr_t *end)
 {
@@ -30,6 +34,24 @@ bool32 Platform_RuntimeGetBssRange(uintptr_t *start, uintptr_t *end)
         return FALSE;
     *start = (uintptr_t)__bss_start;
     *end = (uintptr_t)_end;
+    return *end >= *start;
+}
+
+bool32 Platform_RuntimeGetGameBssRange(uintptr_t *start, uintptr_t *end)
+{
+    if (start == NULL || end == NULL)
+        return FALSE;
+    *start = (uintptr_t)__start_game_bss;
+    *end = (uintptr_t)__stop_game_bss;
+    return *end >= *start;
+}
+
+bool32 Platform_RuntimeGetGameDataRange(uintptr_t *start, uintptr_t *end)
+{
+    if (start == NULL || end == NULL)
+        return FALSE;
+    *start = (uintptr_t)__start_game_data;
+    *end = (uintptr_t)__stop_game_data;
     return *end >= *start;
 }
 

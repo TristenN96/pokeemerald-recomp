@@ -10,11 +10,13 @@
 #define IWRAM_DATA __attribute__((section("gba_iwram"), aligned(4)))
 #define EWRAM_DATA __attribute__((section("gba_ewram"), aligned(4)))
 #define COMMON_DATA __attribute__((section("gba_common"), aligned(4)))
+#define GBA_DATA __attribute__((section("gba_data"), aligned(4)))
 #define HOST_DATA __attribute__((section("host_data"), aligned(8)))
 #else
 #define IWRAM_DATA __attribute__((section("iwram_data")))
 #define EWRAM_DATA __attribute__((section("ewram_data")))
 #define COMMON_DATA __attribute__((section("common_data")))
+#define GBA_DATA
 #define HOST_DATA __attribute__((section("host_data")))
 #endif
 #define UNUSED __attribute__((unused))

@@ -230,6 +230,34 @@ struct SongHeader
     u8 *part[1];
 };
 
+// This is the exact bytecode image used by a Pokémon cry. It is deliberately
+// independent of the host song header: the GOTO operand is four bytes in the
+// stream even when the host uses eight-byte pointers.
+struct PokemonCryBytecode
+{
+    u8 part0;
+    u8 tuneValue;
+    u8 gotoCmd;
+    GbaAddr gotoTarget __attribute__((packed));
+    u8 part1;
+    u8 tuneValue2;
+    u8 cont[2];
+    u8 volCmd;
+    u8 volumeValue;
+    u8 unkCmd0D[2];
+    u32 unkCmd0DParam;
+    u8 xreleCmd[2];
+    u8 releaseValue;
+    u8 panCmd;
+    u8 panValue;
+    u8 tieCmd;
+    u8 tieKeyValue;
+    u8 tieVelocityValue;
+    u8 unkCmd0C[2];
+    u16 unkCmd0CParam;
+    u8 end[2];
+} __attribute__((packed));
+
 struct PokemonCrySong
 {
     u8 trackCount;
@@ -237,29 +265,7 @@ struct PokemonCrySong
     u8 priority;
     u8 reverb;
     struct ToneData *tone;
-    u8 *part[2];
-    u8 gap;
-    u8 part0; // 0x11
-    u8 tuneValue; // 0x12
-    u8 gotoCmd; // 0x13
-    GbaAddr gotoTarget; // Four-byte logical operand in the cry bytecode stream.
-    u8 part1; // 0x18
-    u8 tuneValue2; // 0x19
-    u8 cont[2]; // 0x1A
-    u8 volCmd; // 0x1C
-    u8 volumeValue; // 0x1D
-    u8 unkCmd0D[2]; // 0x1E
-    u32 unkCmd0DParam; // 0x20
-    u8 xreleCmd[2]; // 0x24
-    u8 releaseValue; // 0x26
-    u8 panCmd;
-    u8 panValue; // 0x28
-    u8 tieCmd; // 0x29
-    u8 tieKeyValue; // 0x2A
-    u8 tieVelocityValue; // 0x2B
-    u8 unkCmd0C[2]; // 0x2C
-    u16 unkCmd0CParam; // 0x2E
-    u8 end[2]; // 0x30
+    struct PokemonCryBytecode bytecode;
 };
 
 #define MPT_FLG_VOLSET 0x01
@@ -373,8 +379,8 @@ extern const struct Song gSongTable[];
 
 extern u8 gMPlayMemAccArea[];
 
-//u8 gPokemonCrySong[52];
-//u8 gPokemonCrySongs[52 * MAX_POKEMON_CRIES];
+// The cry bytecode is kept inside a host song object, but is represented by
+// PokemonCryBytecode so its serialized bytes remain GBA-shaped.
 
 #define MAX_POKEMON_CRIES 2
 

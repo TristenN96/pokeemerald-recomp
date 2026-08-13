@@ -381,6 +381,12 @@ void Platform_InputPoll(struct PlatformInputActions *actions)
                 if (Platform_InputBindingMatches(&binding, key, modifiers)) actions->manualSave = TRUE;
                 Platform_ConfigGetKeyboardBinding(PLATFORM_INPUT_ACTION_QUICK_LOAD, &binding);
                 if (Platform_InputBindingMatches(&binding, key, modifiers)) actions->quickLoad = TRUE;
+#if defined(NATIVE_LINUX) || defined(WINDOWS64)
+                /* Temporary native-only developer/testing shortcut. SDL's
+                 * non-repeat keydown event makes this one grant per press. */
+                if (key == PLATFORM_INPUT_KEY_F8 && modifiers == 0)
+                    actions->debugAddRareCandies = TRUE;
+#endif
             }
             if (event.key.keysym.scancode == SDL_SCANCODE_F10 && modifiers == 0)
                 actions->openSettings = TRUE;

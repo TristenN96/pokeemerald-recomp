@@ -40,7 +40,11 @@
 
 #define NUM_LAYOUT_OFFSETS 8
 
+#if defined(PORTABLE)
+extern const GbaAddr gMapLayouts[];
+#else
 extern const struct MapLayout *const gMapLayouts[];
+#endif
 
 struct PyramidWildMon
 {
@@ -1532,7 +1536,11 @@ void GenerateBattlePyramidFloorLayout(u16 *backupMapData, bool8 setPlayerPositio
     {
         u16 *map;
         int yOffset, xOffset;
+#if defined(PORTABLE)
+        const struct MapLayout *mapLayout = HostResolveGbaTableEntry(gMapLayouts, floorLayoutOffsets[i] + LAYOUT_BATTLE_FRONTIER_BATTLE_PYRAMID_FLOOR);
+#else
         const struct MapLayout *mapLayout = gMapLayouts[floorLayoutOffsets[i] + LAYOUT_BATTLE_FRONTIER_BATTLE_PYRAMID_FLOOR];
+#endif
         const u16 *layoutMap = mapLayout->map;
 
         gBackupMapLayout.map = backupMapData;

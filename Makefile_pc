@@ -393,7 +393,7 @@ endif
 
 ifeq ($(NODEP),1)
 $(DATA_ASM_BUILDDIR)/%.o: $(DATA_ASM_SUBDIR)/%.s
-	$(PREPROC) $< charmap.txt | $(CPP) -I include | $(PREPROC) -ie $$< charmap.txt | $(ASM_PSEUDO_OP_CONV) | $(AS) $(ASFLAGS) -o $@
+	$(PREPROC) $< charmap.txt | $(CPP) -I include | $(PREPROC) -ie $< charmap.txt | $(ASM_PSEUDO_OP_CONV) | $(AS) $(ASFLAGS) -o $@
 	$(FIX_UNDERSCORE) $@
 else
 define DATA_ASM_DEP
@@ -437,12 +437,12 @@ $(ELF): $(OBJ_DIR)/ld_script.ld $(OBJS)
 	cd $(OBJ_DIR) && $(LD) $(LDFLAGS) -T ld_script.ld -o ../../$@ $(OBJS_REL) $(LIB)
 	$(FIX) $@ -t"$(TITLE)" -c$(GAME_CODE) -m$(MAKER_CODE) -r$(REVISION) --silent
 
-$(ROM): $(OBJS) $(WINDOWS_BORDER)
+$(ROM): $(OBJS) $(WINDOWS_BORDER) ld_script_native.ld
 ifeq ($(NATIVE_LINUX),1)
-	$(CC) $(CFLAGS) -no-pie -Wl,--demangle $(OBJS) $(PLATFORM_INCLUDES) -o $@
+	$(CC) $(CFLAGS) -no-pie -Wl,--demangle -Wl,-T,ld_script_native.ld $(OBJS) $(PLATFORM_INCLUDES) -o $@
 else ifeq ($(WINDOWS64),1)
 	$(CC) $(CFLAGS) -mwindows -static-libgcc \
-		-Wl,--demangle,--image-base,0x00400000,--disable-dynamicbase,--disable-reloc-section \
+		-Wl,--demangle,-T,ld_script_native.ld,--image-base,0x00400000,--disable-dynamicbase,--disable-reloc-section \
 		$(OBJS) $(PLATFORM_INCLUDES) -o $@
 else
 	$(CC) $(CFLAGS) -Wl,--demangle $(OBJS) -static-libgcc -L$(SDL_DIR)/lib $(PLATFORM_INCLUDES) -lwinmm -lxinput -o $@

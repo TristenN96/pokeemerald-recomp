@@ -105,6 +105,8 @@ void AnimTravelDiagonally(struct Sprite *sprite);
 void InitAnimLinearTranslation(struct Sprite *sprite);
 void AnimTranslateLinear_WithFollowup(struct Sprite *sprite);
 u8 GetBattlerSpriteBGPriority(u8 battler);
+// These helpers store a GBA-width data address in two sprite/task halfwords.
+// They resolve through the native host address map on 64-bit builds.
 void *LoadPointerFromVars(s16 lo, s16 hi);
 void StorePointerInVars(s16 *lo, s16 *hi, const void *ptr);
 void InitPrioritiesForVisibleBattlers(void);
@@ -186,6 +188,8 @@ u8 GetAnimBattlerSpriteId(u8 animBattler);
 bool8 IsDoubleBattle(void);
 u8 GetBattleBgPaletteNum(void);
 u8 GetBattlerSpriteBGPriorityRank(u8 battler);
+// This pair is for callbacks only. Linux64 stores the native callback in a
+// sidecar and intentionally does not leave a pointer in data[6]/data[7].
 void StoreSpriteCallbackInData6(struct Sprite *sprite, void (*callback)(struct Sprite *));
 void SetSpritePrimaryCoordsFromSecondaryCoords(struct Sprite *sprite);
 u8 GetBattlerSpriteDefault_Y(u8 battler);

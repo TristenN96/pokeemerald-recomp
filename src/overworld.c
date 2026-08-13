@@ -92,8 +92,13 @@ struct CableClubPlayer
 #define FACING_FORCED_LEFT 9
 #define FACING_FORCED_RIGHT 10
 
+#if defined(PORTABLE)
+extern const GbaAddr gMapLayouts[];
+extern const GbaAddr gMapGroups[];
+#else
 extern const struct MapLayout *const gMapLayouts[];
 extern const struct MapHeader *const *const gMapGroups[];
+#endif
 
 static void Overworld_ResetStateAfterWhiteOut(void);
 static void CB2_ReturnToFieldLocal(void);
@@ -539,7 +544,11 @@ const struct MapLayout *GetMapLayout(void)
 {
     u16 mapLayoutId = gSaveBlock1Ptr->mapLayoutId;
     if (mapLayoutId)
+#if defined(PORTABLE)
+        return HostResolveGbaTableEntry(gMapLayouts, mapLayoutId - 1);
+#else
         return gMapLayouts[mapLayoutId - 1];
+#endif
     return NULL;
 }
 
@@ -584,7 +593,12 @@ static bool32 IsDummyWarp(struct WarpData *warp)
 
 struct MapHeader const *const Overworld_GetMapHeaderByGroupAndId(u16 mapGroup, u16 mapNum)
 {
+#if defined(PORTABLE)
+    const GbaAddr *mapGroupTable = HostResolveGbaAddr(gMapGroups[mapGroup]);
+    return HostResolveGbaTableEntry(mapGroupTable, mapNum);
+#else
     return gMapGroups[mapGroup][mapNum];
+#endif
 }
 
 struct MapHeader const *const GetDestinationWarpMapHeader(void)

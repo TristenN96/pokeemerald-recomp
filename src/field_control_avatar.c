@@ -36,6 +36,10 @@
 #include "constants/songs.h"
 #include "constants/trainer_hill.h"
 
+#if defined(NATIVE_LINUX) || defined(WINDOWS64)
+#include <stdio.h>
+#endif
+
 static EWRAM_DATA u8 sWildEncounterImmunitySteps = 0;
 static EWRAM_DATA u16 sPrevMetatileBehavior = 0;
 
@@ -827,6 +831,17 @@ static void SetupWarp(struct MapHeader *unused, s8 warpEventId, struct MapPositi
         const struct MapHeader *mapHeader;
 
         SetWarpDestinationToMapWarp(warpEvent->mapGroup, warpEvent->mapNum, warpEvent->warpId);
+#if defined(NATIVE_LINUX) || defined(WINDOWS64)
+        /* Development-only warp diagnostic. Keep this at the representation boundary so
+         * it reports the decoded event before any map-load code can alter the destination. */
+        fprintf(stderr, "Debug warp: current %u/%u index %d -> %u/%u warp %u\n",
+                (unsigned)(u8)gSaveBlock1Ptr->location.mapGroup,
+                (unsigned)(u8)gSaveBlock1Ptr->location.mapNum,
+                warpEventId,
+                (unsigned)warpEvent->mapGroup,
+                (unsigned)warpEvent->mapNum,
+                (unsigned)warpEvent->warpId);
+#endif
         UpdateEscapeWarp(position->x, position->y);
         mapHeader = Overworld_GetMapHeaderByGroupAndId(warpEvent->mapGroup, warpEvent->mapNum);
         if (mapHeader->events->warps[warpEvent->warpId].mapNum == MAP_NUM(MAP_DYNAMIC))

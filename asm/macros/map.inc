@@ -9,6 +9,11 @@
 	.endif
 	.endm
 
+	/* GBA logical addresses always occupy one 32-bit table entry. */
+	.macro gba_ptr value:req
+	.int \value
+	.endm
+
 	/* Takes a MAP constant and outputs the map group and map number as separate bytes*/
 	.macro map map_id:req
 	.byte \map_id >> 8    /* map group*/

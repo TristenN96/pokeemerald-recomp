@@ -212,6 +212,15 @@ STATIC_ASSERT(sizeof(struct ObjectEventTemplate) == 0x18, ObjectEventTemplateSiz
 STATIC_ASSERT(sizeof(struct WarpEvent) == 0x08, WarpEventSize);
 STATIC_ASSERT(sizeof(struct MapConnection) == 0x0C, MapConnectionSize);
 #if defined(LINUX64) && LINUX64
+STATIC_ASSERT(offsetof(struct MapEvents, objectEvents) == 0x08, MapEventsObjectEventsOffset);
+STATIC_ASSERT(offsetof(struct MapEvents, warps) == 0x10, MapEventsWarpsOffset);
+STATIC_ASSERT(offsetof(struct MapEvents, coordEvents) == 0x18, MapEventsCoordEventsOffset);
+STATIC_ASSERT(offsetof(struct MapEvents, bgEvents) == 0x20, MapEventsBgEventsOffset);
+STATIC_ASSERT(offsetof(struct MapHeader, mapLayout) == 0x00, MapHeaderLayoutOffset);
+STATIC_ASSERT(offsetof(struct MapHeader, events) == 0x08, MapHeaderEventsOffset);
+STATIC_ASSERT(offsetof(struct MapHeader, mapScripts) == 0x10, MapHeaderScriptsOffset);
+STATIC_ASSERT(offsetof(struct MapHeader, connections) == 0x18, MapHeaderConnectionsOffset);
+STATIC_ASSERT(sizeof(struct MapHeader) == 0x30, MapHeaderNativeSize);
 STATIC_ASSERT(sizeof(struct CoordEvent) == 0x18, CoordEventNativeSize);
 STATIC_ASSERT(sizeof(struct BgEvent) == 0x10, BgEventNativeSize);
 STATIC_ASSERT(sizeof(struct MapEvents) == 0x28, MapEventsNativeSize);

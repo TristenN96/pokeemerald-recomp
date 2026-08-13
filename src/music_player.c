@@ -213,7 +213,7 @@ void MP2K_event_fine(struct MP2KPlayerState *unused, struct MP2KTrack *track) {
 void MP2K_event_goto(struct MP2KPlayerState *unused, struct MP2KTrack *track) {
     // Music command operands are four-byte little-endian values in the GBA
     // format. Their width is independent of the host pointer size.
-    GbaAddr address = T1_READ_32(track->cmdPtr);
+    GbaAddr address = MP2KReadAddressOperand(track->cmdPtr);
     u8 *resolved = (u8 *)HostResolveGbaAddr(address);
     track->cmdPtr = resolved;
 }
@@ -222,7 +222,7 @@ void MP2K_event_goto(struct MP2KPlayerState *unused, struct MP2KTrack *track) {
 void MP2K_event_patt(struct MP2KPlayerState *unused, struct MP2KTrack *track) {
     u8 level = track->patternLevel;
     if (level < 3) {
-        track->patternStack[level] = track->cmdPtr + sizeof(u32);
+        track->patternStack[level] = track->cmdPtr + MP2K_ADDRESS_OPERAND_SIZE;
         track->patternLevel++;
         MP2K_event_goto(unused, track);
     } else {
@@ -253,7 +253,7 @@ void MP2K_event_rept(struct MP2KPlayerState *unused, struct MP2KTrack *track) {
             MP2K_event_goto(unused, track);
         } else {
             track->repeatCount = 0;
-            track->cmdPtr += sizeof(u8) + sizeof(u32);
+            track->cmdPtr += sizeof(u8) + MP2K_ADDRESS_OPERAND_SIZE;
         }
     }
 }

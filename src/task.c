@@ -1,10 +1,22 @@
 #include "global.h"
 #include "task.h"
 #include "platform/host_memory.h"
+#include <stddef.h>
 
 extern void abort(void);
 
 COMMON_DATA struct Task gTasks[NUM_TASKS] = {0};
+
+#if defined(LINUX64) && LINUX64
+STATIC_ASSERT(sizeof(TaskFunc) == sizeof(uintptr_t), NativeTaskFunctionPointerSize);
+STATIC_ASSERT(offsetof(struct Task, func) == 0x00, NativeTaskFuncOffset);
+STATIC_ASSERT(offsetof(struct Task, isActive) == 0x08, NativeTaskActiveOffset);
+STATIC_ASSERT(offsetof(struct Task, prev) == 0x09, NativeTaskPrevOffset);
+STATIC_ASSERT(offsetof(struct Task, next) == 0x0A, NativeTaskNextOffset);
+STATIC_ASSERT(offsetof(struct Task, priority) == 0x0B, NativeTaskPriorityOffset);
+STATIC_ASSERT(offsetof(struct Task, data) == 0x0C, NativeTaskDataOffset);
+STATIC_ASSERT(sizeof(struct Task) == 0x30, NativeTaskSize);
+#endif
 
 #if defined(LINUX64) && LINUX64
 // Follow-up callbacks are game-visible task data on the GBA, but are native

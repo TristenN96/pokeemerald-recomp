@@ -9,6 +9,20 @@ STATIC_ASSERT(offsetof(struct SoundInfo, pcmBuffer) == offsetof(struct SoundMixe
 STATIC_ASSERT(sizeof(struct SoundInfo) == sizeof(struct SoundMixerState), SoundMixerStateSize);
 STATIC_ASSERT(offsetof(struct MusicPlayerTrack, cmdPtr) == offsetof(struct MP2KTrack, cmdPtr), MusicTrackCommandPointerLayout);
 STATIC_ASSERT(sizeof(struct MusicPlayerTrack) == sizeof(struct MP2KTrack), MusicTrackSize);
+STATIC_ASSERT(sizeof(GbaAddr) == 4, PokemonCryGotoOperandWidth);
+STATIC_ASSERT(offsetof(struct PokemonCryBytecode, part0) == 0, PokemonCryPart0Offset);
+STATIC_ASSERT(offsetof(struct PokemonCryBytecode, gotoTarget) == 3, PokemonCryGotoOperandOffset);
+STATIC_ASSERT(offsetof(struct PokemonCryBytecode, cont) == 9, PokemonCryContinuationOffset);
+STATIC_ASSERT(offsetof(struct PokemonCryBytecode, end) == 31, PokemonCryEndOffset);
+STATIC_ASSERT(sizeof(struct PokemonCryBytecode) == 0x21, PokemonCryBytecodeSize);
+STATIC_ASSERT(offsetof(struct PokemonCrySong, bytecode)
+              == offsetof(struct PokemonCrySong, tone) + sizeof(struct ToneData *),
+              PokemonCrySongBytecodeLayout);
+STATIC_ASSERT(sizeof(struct PokemonCrySong)
+              == ((offsetof(struct PokemonCrySong, bytecode) + sizeof(struct PokemonCryBytecode)
+                   + __alignof__(struct PokemonCrySong) - 1)
+                  & ~(__alignof__(struct PokemonCrySong) - 1)),
+              PokemonCrySongSize);
 
 #ifdef PORTABLE
     #include "cgb_audio.h"
@@ -50,6 +64,7 @@ struct HostSongHeader
 };
 
 static struct HostSongHeader sHostSongHeaders[NUM_MUSIC_PLAYERS];
+static struct HostSongHeader sHostPokemonCrySongHeaders[MAX_POKEMON_CRIES];
 
 static struct MusicPlayerInfo *GetMusicPlayerInfo(const struct MusicPlayer *player)
 {
@@ -75,6 +90,22 @@ static struct SongHeader *HydrateSongHeader(u8 playerId, GbaAddr address)
     memset(host->parts, 0, sizeof(host->parts));
     for (i = 0; i < host->trackCount && i < MAX_MUSICPLAYER_TRACKS; i++)
         host->parts[i] = HostResolveGbaAddr(T1_READ_32(raw + 8 + i * sizeof(GbaAddr)));
+    return (struct SongHeader *)host;
+}
+
+static struct SongHeader *HydratePokemonCrySong(u8 cryId)
+{
+    struct PokemonCrySong *cry = &gPokemonCrySongs[cryId];
+    struct HostSongHeader *host = &sHostPokemonCrySongHeaders[cryId];
+
+    host->trackCount = cry->trackCount;
+    host->blockCount = cry->blockCount;
+    host->priority = cry->priority;
+    host->reverb = cry->reverb;
+    host->tone = cry->tone;
+    memset(host->parts, 0, sizeof(host->parts));
+    host->parts[0] = &cry->bytecode.part0;
+    host->parts[1] = &cry->bytecode.part1;
     return (struct SongHeader *)host;
 }
 
@@ -1622,7 +1653,7 @@ cond_true:
     }
 
 cond_false:
-    track->cmdPtr += 4;
+    track->cmdPtr += MP2K_ADDRESS_OPERAND_SIZE;
 }
 
 void ply_xcmd(struct MusicPlayerInfo *mplayInfo, struct MusicPlayerTrack *track)
@@ -1648,19 +1679,10 @@ void ply_xxx(struct MusicPlayerInfo *mplayInfo, struct MusicPlayerTrack *track)
 
 void ply_xwave(struct MusicPlayerInfo *mplayInfo, struct MusicPlayerTrack *track)
 {
-    u32 wav;
-
-#ifdef UBFIX
-    wav = 0;
-#endif
-
-    READ_XCMD_BYTE(wav, 0) // UB: uninitialized variable
-    READ_XCMD_BYTE(wav, 1)
-    READ_XCMD_BYTE(wav, 2)
-    READ_XCMD_BYTE(wav, 3)
+    GbaAddr wav = MP2KReadAddressOperand(track->cmdPtr);
 
     track->tone.wav = HostResolveGbaAddr(wav);
-    track->cmdPtr += 4;
+    track->cmdPtr += MP2K_ADDRESS_OPERAND_SIZE;
 }
 
 void ply_xtype(struct MusicPlayerInfo *mplayInfo, struct MusicPlayerTrack *track)
@@ -1792,49 +1814,47 @@ start_song:
     gPokemonCrySongs[i] = gPokemonCrySong;
 
     gPokemonCrySongs[i].tone = tone;
-    gPokemonCrySongs[i].part[0] = &gPokemonCrySongs[i].part0;
-    gPokemonCrySongs[i].part[1] = &gPokemonCrySongs[i].part1;
-    gPokemonCrySongs[i].gotoTarget = HostPointerToGbaAddr(gPokemonCrySongs[i].cont);
+    gPokemonCrySongs[i].bytecode.gotoTarget = HostPointerToGbaAddr(gPokemonCrySongs[i].bytecode.cont);
 
     mplayInfo->ident = ID_NUMBER;
 
-    MPlayStart(mplayInfo, (struct SongHeader *)(&gPokemonCrySongs[i]));
+    MPlayStart(mplayInfo, HydratePokemonCrySong(i));
 
     return mplayInfo;
 }
 
 void SetPokemonCryVolume(u8 val)
 {
-    gPokemonCrySong.volumeValue = val & 0x7F;
+    gPokemonCrySong.bytecode.volumeValue = val & 0x7F;
 }
 
 void SetPokemonCryPanpot(s8 val)
 {
-    gPokemonCrySong.panValue = (val + C_V) & 0x7F;
+    gPokemonCrySong.bytecode.panValue = (val + C_V) & 0x7F;
 }
 
 void SetPokemonCryPitch(s16 val)
 {
     s16 b = val + 0x80;
-    u8 a = gPokemonCrySong.tuneValue2 - gPokemonCrySong.tuneValue;
-    gPokemonCrySong.tieKeyValue = (b >> 8) & 0x7F;
-    gPokemonCrySong.tuneValue = (b >> 1) & 0x7F;
-    gPokemonCrySong.tuneValue2 = (a + ((b >> 1) & 0x7F)) & 0x7F;
+    u8 a = gPokemonCrySong.bytecode.tuneValue2 - gPokemonCrySong.bytecode.tuneValue;
+    gPokemonCrySong.bytecode.tieKeyValue = (b >> 8) & 0x7F;
+    gPokemonCrySong.bytecode.tuneValue = (b >> 1) & 0x7F;
+    gPokemonCrySong.bytecode.tuneValue2 = (a + ((b >> 1) & 0x7F)) & 0x7F;
 }
 
 void SetPokemonCryLength(u16 val)
 {
-    gPokemonCrySong.unkCmd0CParam = val;
+    gPokemonCrySong.bytecode.unkCmd0CParam = val;
 }
 
 void SetPokemonCryRelease(u8 val)
 {
-    gPokemonCrySong.releaseValue = val;
+    gPokemonCrySong.bytecode.releaseValue = val;
 }
 
 void SetPokemonCryProgress(u32 val)
 {
-    gPokemonCrySong.unkCmd0DParam = val;
+    gPokemonCrySong.bytecode.unkCmd0DParam = val;
 }
 
 bool32 IsPokemonCryPlaying(struct MusicPlayerInfo *mplayInfo)
@@ -1852,7 +1872,7 @@ void SetPokemonCryChorus(s8 val)
     if (val)
     {
         gPokemonCrySong.trackCount = 2;
-        gPokemonCrySong.tuneValue2 = (val + gPokemonCrySong.tuneValue) & 0x7F;
+        gPokemonCrySong.bytecode.tuneValue2 = (val + gPokemonCrySong.bytecode.tuneValue) & 0x7F;
     }
     else
     {

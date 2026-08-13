@@ -104,7 +104,6 @@ extern unsigned char __start_gba_common[];
 extern unsigned char __stop_gba_common[];
 extern unsigned char __start_host_data[];
 extern unsigned char __stop_host_data[];
-extern s16 WAV[32];
 extern u8 apuCycle;
 extern const u8 *gAIScriptPtr;
 #if defined(LINUX64) && LINUX64
@@ -198,6 +197,15 @@ static u32 BuildSlices(struct NativeStateSlice *slices, u32 capacity,
                        u8 *framebuffer, struct SiiRtcInfo *rtc)
 {
     u32 count = 0;
+    uintptr_t gameBssStart;
+    uintptr_t gameBssEnd;
+    uintptr_t gameDataStart;
+    uintptr_t gameDataEnd;
+
+    if (!Platform_RuntimeGetGameBssRange(&gameBssStart, &gameBssEnd))
+        gameBssStart = gameBssEnd = 0;
+    if (!Platform_RuntimeGetGameDataRange(&gameDataStart, &gameDataEnd))
+        gameDataStart = gameDataEnd = 0;
 
 #define ADD_SLICE(sliceTag, sliceSource, sliceSize, pointerState) \
     do { \
@@ -213,25 +221,13 @@ static u32 BuildSlices(struct NativeStateSlice *slices, u32 capacity,
     Platform_ClockCopyState(rtc, sizeof(*rtc));
     Platform_VideoCopyFramebuffer(framebuffer, DISPLAY_WIDTH * DISPLAY_HEIGHT * sizeof(u32));
 
-    /* The portable tree still has a set of vanilla static runtime roots that
-     * predate the named logical sections. They occupy the audited game BSS
-     * prefix. The first eight bytes are the libc stderr copy relocation and
-     * are host-owned; the range ends at FLASH_BASE, after which the explicit
-     * GBA buffers are listed below. */
-    {
-        uintptr_t bssStart;
-        uintptr_t bssEnd;
-        uintptr_t begin;
-        uintptr_t end = (uintptr_t)FLASH_BASE;
-        u32 size;
-
-        if (!Platform_RuntimeGetBssRange(&bssStart, &bssEnd)
-         || end < bssStart || end > bssEnd)
-            bssStart = end;
-        begin = bssStart + sizeof(void *);
-        size = end >= begin && end - begin <= UINT32_MAX ? (u32)(end - begin) : 0;
-        ADD_SLICE(STATE_SECTION_GAME_BSS, (const void *)begin, size, TRUE);
-    }
+    /* These ranges are emitted by ld_script_native.ld from the same game-owned
+     * object inputs as the GBA linker. They deliberately exclude the native
+     * executable .bss/.data, including libc COPY relocations and platform
+     * state. */
+    ADD_SLICE(STATE_SECTION_GAME_BSS, (const void *)gameBssStart,
+              gameBssEnd >= gameBssStart && gameBssEnd - gameBssStart <= UINT32_MAX
+              ? (u32)(gameBssEnd - gameBssStart) : 0, TRUE);
     ADD_SLICE(STATE_SECTION_REGISTERS, REG_BASE, 0x400, FALSE);
     ADD_SLICE(STATE_SECTION_VIDEO_MEMORY, VRAM_, sizeof(VRAM_) + sizeof(PLTT) + sizeof(OAM), FALSE);
     /* The three video arrays are not adjacent, so their combined slice is
@@ -245,7 +241,9 @@ static u32 BuildSlices(struct NativeStateSlice *slices, u32 capacity,
               SectionSize(__start_gba_iwram, __stop_gba_iwram), TRUE);
     ADD_SLICE(STATE_SECTION_COMMON, __start_gba_common,
               SectionSize(__start_gba_common, __stop_gba_common), TRUE);
-    ADD_SLICE(STATE_SECTION_GAME_DATA, WAV, sizeof(WAV), FALSE);
+    ADD_SLICE(STATE_SECTION_GAME_DATA, (const void *)gameDataStart,
+              gameDataEnd >= gameDataStart && gameDataEnd - gameDataStart <= UINT32_MAX
+              ? (u32)(gameDataEnd - gameDataStart) : 0, TRUE);
     ADD_SLICE(STATE_SECTION_FRAMEBUFFER, framebuffer,
               DISPLAY_WIDTH * DISPLAY_HEIGHT * sizeof(u32), FALSE);
     ADD_SLICE(STATE_SECTION_TASK_SIDECAR, NULL, Task_GetStateSize(), FALSE);
@@ -262,11 +260,25 @@ static bool32 IsExecutableOrGameAddress(uintptr_t value)
 {
     uintptr_t start;
     uintptr_t end;
+    uintptr_t bssStart;
+    uintptr_t bssEnd;
+    uintptr_t gameBssStart;
+    uintptr_t gameBssEnd;
     uintptr_t hostStart = (uintptr_t)__start_host_data;
     uintptr_t hostEnd = (uintptr_t)__stop_host_data;
-    return Platform_RuntimeGetImageRange(&start, &end)
-        && value >= start && value < end
-        && !(value >= hostStart && value < hostEnd);
+
+    if (!Platform_RuntimeGetImageRange(&start, &end)
+     || value < start || value >= end
+     || (value >= hostStart && value < hostEnd))
+        return FALSE;
+    /* The native ELF's ordinary BSS contains platform state and libc COPY
+     * relocations. Only the linker-owned game_bss range is a persistent game
+     * address range; this keeps host globals from becoming valid pointer roots. */
+    if (Platform_RuntimeGetBssRange(&bssStart, &bssEnd)
+     && value >= bssStart && value < bssEnd)
+        return Platform_RuntimeGetGameBssRange(&gameBssStart, &gameBssEnd)
+            && value >= gameBssStart && value < gameBssEnd;
+    return TRUE;
 }
 
 static bool32 IsMappedHostAddress(uintptr_t value)
@@ -1273,14 +1285,20 @@ static void DescribePointerTarget(const struct NativeStateSlice *slice, u32 offs
         {
             uintptr_t bssStart;
             uintptr_t bssEnd;
+            uintptr_t gameBssStart;
+            uintptr_t gameBssEnd;
             bool32 inBss = Platform_RuntimeGetBssRange(&bssStart, &bssEnd)
                         && address >= bssStart && address < bssEnd;
+            bool32 inGameBss = Platform_RuntimeGetGameBssRange(&gameBssStart, &gameBssEnd)
+                            && address >= gameBssStart && address < gameBssEnd;
 
             if ((address >= (uintptr_t)__start_gba_ewram && address < (uintptr_t)__stop_gba_ewram)
              || (address >= (uintptr_t)__start_gba_iwram && address < (uintptr_t)__stop_gba_iwram)
              || (address >= (uintptr_t)__start_gba_common && address < (uintptr_t)__stop_gba_common)
-             || inBss)
+             || inGameBss)
                 snprintf(target, targetSize, "logical GBA runtime memory (%s)", symbol);
+            else if (inBss)
+                snprintf(target, targetSize, "host-only native BSS (%s)", symbol);
             else
                 snprintf(target, targetSize, "generated/static game data (%s)", symbol);
         }

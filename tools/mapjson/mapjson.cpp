@@ -444,13 +444,13 @@ string generate_groups_text(Json groups_data) {
         text << group << "::\n";
         auto maps = groups_data[group].array_items();
         for (Json &map_name : maps)
-            text << "\thost_ptr " << json_to_string(map_name) << "\n";
+            text << "\tgba_ptr " << json_to_string(map_name) << "\n";
         text << "\n";
     }
 
     text << "\t.align 2\n" << "gMapGroups::\n";
     for (auto &group : groups_data["group_order"].array_items())
-        text << "\thost_ptr " << json_to_string(group) << "\n";
+        text << "\tgba_ptr " << json_to_string(group) << "\n";
     text << "\n";
 
     return text.str();
@@ -631,7 +631,7 @@ string generate_layouts_table_text(Json layouts_data) {
     for (auto &layout : layouts_data["layouts"].array_items()) {
         string layout_name = json_to_string(layout, "name", true);
         if (layout_name.empty()) layout_name = "NULL";
-        text << "\thost_ptr " << layout_name << "\n";
+        text << "\tgba_ptr " << layout_name << "\n";
     }
 
     return text.str();
