@@ -422,9 +422,15 @@ int main(int argc, char **argv)
             SDL_Quit();
             return 1;
         }
+#ifdef _WIN32
+        if (NativeStatePointerInGameRange(stdin)
+         || NativeStatePointerInGameRange(stdout)
+         || NativeStatePointerInGameRange(stderr))
+#else
         if (NativeStatePointerInGameRange(&stdin)
          || NativeStatePointerInGameRange(&stdout)
          || NativeStatePointerInGameRange(&stderr))
+#endif
         {
             fprintf(stderr, "Native state self-test found a libc FILE object in game state\n");
             Platform_StorageShutdown();
