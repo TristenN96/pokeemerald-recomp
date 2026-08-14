@@ -4,7 +4,7 @@ set -euo pipefail
 readonly script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 readonly repo_root=$(cd -- "$script_dir/.." && pwd)
 readonly platform=${1:-}
-readonly version=${2:-v0.1.0-alpha}
+readonly version=${2:-v0.1.1-alpha}
 readonly source_date_epoch=${SOURCE_DATE_EPOCH:-$(git -C "$repo_root" log -1 --format=%ct)}
 readonly release_dir="$repo_root/release"
 export SOURCE_DATE_EPOCH="$source_date_epoch"
@@ -31,9 +31,6 @@ copy_common_files() {
     install -d -m 0755 "$stage/images"
     install -m 0644 "$readme" "$stage/README.md"
     install -m 0644 "$repo_root/LICENSE" "$stage/LICENSE"
-    install -m 0644 "$repo_root/BG.png" "$stage/BG.png"
-    install -m 0644 "$repo_root/BG1.png" "$stage/BG1.png"
-    install -m 0644 "$repo_root/Border.png" "$stage/Border.png"
     install -m 0644 "$repo_root/images/rayquaza.png" "$stage/images/rayquaza.png"
 }
 
@@ -132,9 +129,6 @@ package_windows() {
 
 require_file "$repo_root/README.md"
 require_file "$repo_root/LICENSE"
-require_file "$repo_root/BG.png"
-require_file "$repo_root/BG1.png"
-require_file "$repo_root/Border.png"
 require_file "$repo_root/images/rayquaza.png"
 
 case "$platform" in

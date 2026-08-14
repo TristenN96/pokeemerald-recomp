@@ -833,30 +833,21 @@ void Platform_ReadFlash(u16 sectorNum, u32 offset, u8 *dest, u32 size)
         DBGPRINTF("ReadFlash out of bounds or unavailable\n");
 }
 
+/* The decorative border backgrounds/frame were removed from the presentation
+ * layer. These stubs remain only because the in-game option menu still
+ * queries them; a count of 1 leaves "OFF" as the sole background choice. */
 u8 Platform_GetBorderBackgroundCount(void)
 {
-    return Platform_VideoGetBackgroundCount() + 1;
+    return 1;
 }
 
 u8 Platform_GetBorderBackground(void)
 {
-    if (Platform_ConfigHasBorderBackground())
-        return Platform_ConfigGetBorderBackground();
-    if (gSaveBlock2Ptr != NULL)
-    {
-        u8 legacySelection = gSaveBlock2Ptr->optionsBorderBackground;
-        if (legacySelection == 1)
-            return Platform_VideoGetBackgroundCount();
-        if (legacySelection >= 2)
-            return legacySelection - 1;
-    }
     return 0;
 }
 
 void Platform_SetBorderBackground(u8 selection)
 {
-    Platform_ConfigSetBorderBackground(selection);
-    Platform_ConfigStore();
 }
 
 void Platform_SetSetting(enum PlatformSetting setting, u8 value)

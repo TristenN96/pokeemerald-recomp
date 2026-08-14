@@ -4,7 +4,7 @@
 built from the [pret Pokémon Emerald decompilation](https://github.com/pret/pokeemerald).
 The public alpha supports Linux x64 and Windows x64.
 
-> **Alpha software:** `v0.1.0-alpha` is an early test release. Back up important
+> **Alpha software:** `v0.1.1-alpha` is an early test release. Back up important
 > saves and expect bugs or compatibility changes.
 
 ## A Pokémon Emerald ROM is required
@@ -37,8 +37,8 @@ The supported ROM is:
 
 ### Linux x64
 
-1. Extract `pokeemerald-recomp-v0.1.0-alpha-linux-x64.tar.gz`.
-2. Keep `BG.png`, `BG1.png`, `Border.png`, and `images/` beside the executable.
+1. Extract `pokeemerald-recomp-v0.1.1-alpha-linux-x64.tar.gz`.
+2. Keep the `images/` directory beside the executable.
 3. Run `./pokeemerald-recomp` from the extracted directory. You may also run it
    by absolute path from another working directory.
 
@@ -48,7 +48,7 @@ are not already present.
 
 ### Windows x64
 
-1. Extract `pokeemerald-recomp-v0.1.0-alpha-windows-x64.zip`.
+1. Extract `pokeemerald-recomp-v0.1.1-alpha-windows-x64.zip`.
 2. Keep the included DLLs and artwork beside `pokeemerald-recomp.exe`.
 3. Double-click `pokeemerald-recomp.exe`.
 

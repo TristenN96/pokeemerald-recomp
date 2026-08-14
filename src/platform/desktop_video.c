@@ -7,14 +7,10 @@
 #else
 #include <SDL2/SDL.h>
 #endif
-#if defined(NATIVE_LINUX) || defined(_WIN32)
-#include <SDL2/SDL_image.h>
-#endif
 
 #include "global.h"
 #include "platform.h"
 #include "platform/framedraw.h"
-#include "platform/desktop_assets.h"
 #include "platform/desktop_config.h"
 #include "platform/desktop_video.h"
 
@@ -22,13 +18,42 @@ HOST_DATA SDL_Window *sdlWindow;
 HOST_DATA SDL_Renderer *sdlRenderer;
 HOST_DATA SDL_Texture *sdlTexture;
 
-#if defined(NATIVE_LINUX) || defined(_WIN32)
-#define MAX_BORDER_BACKGROUNDS 15
-HOST_DATA static SDL_Texture *sBackgroundTextures[MAX_BORDER_BACKGROUNDS];
-HOST_DATA static SDL_Texture *sBorderTexture;
-#endif
-HOST_DATA static u8 sBorderBackgroundCount = 1;
 HOST_DATA static u32 sFramebuffer[DISPLAY_WIDTH * DISPLAY_HEIGHT];
+
+#if defined(NATIVE_LINUX) || defined(_WIN32)
+/* The game image is presented in the largest aspect-correct rectangle that
+ * fits the actual renderer output. Matching aspect ratios fill the window
+ * edge-to-edge; mismatched ones get plain black letterbox/pillarbox bars. */
+static void GetGameViewport(int sourceWidth, int sourceHeight, SDL_Rect *viewport)
+{
+    int outputWidth;
+    int outputHeight;
+
+    SDL_GetRendererOutputSize(sdlRenderer, &outputWidth, &outputHeight);
+    if (Platform_GetSetting(PLATFORM_SETTING_INTEGER_SCALE))
+    {
+        int scale = outputWidth / sourceWidth;
+        if (outputHeight / sourceHeight < scale)
+            scale = outputHeight / sourceHeight;
+        if (scale < 1)
+            scale = 1;
+        viewport->w = sourceWidth * scale;
+        viewport->h = sourceHeight * scale;
+    }
+    else if (outputWidth * sourceHeight <= outputHeight * sourceWidth)
+    {
+        viewport->w = outputWidth;
+        viewport->h = outputWidth * sourceHeight / sourceWidth;
+    }
+    else
+    {
+        viewport->w = outputHeight * sourceWidth / sourceHeight;
+        viewport->h = outputHeight;
+    }
+    viewport->x = (outputWidth - viewport->w) / 2;
+    viewport->y = (outputHeight - viewport->h) / 2;
+}
+#endif
 
 static void RenderCurrentTexture(void)
 {
@@ -36,47 +61,9 @@ static void RenderCurrentTexture(void)
     SDL_RenderClear(sdlRenderer);
 #if defined(NATIVE_LINUX) || defined(_WIN32)
     {
-        u8 backgroundOption = Platform_GetBorderBackground();
-        int outputWidth;
-        int outputHeight;
-        int gameHeight;
-        int gameWidth;
-        SDL_GetRendererOutputSize(sdlRenderer, &outputWidth, &outputHeight);
-        if (backgroundOption < sBorderBackgroundCount && sBackgroundTextures[backgroundOption] != NULL)
-            SDL_RenderCopy(sdlRenderer, sBackgroundTextures[backgroundOption], NULL, NULL);
-        if (Platform_GetSetting(PLATFORM_SETTING_INTEGER_SCALE))
-        {
-            int scale = outputWidth / DISPLAY_WIDTH;
-            if (outputHeight / DISPLAY_HEIGHT < scale)
-                scale = outputHeight / DISPLAY_HEIGHT;
-            if (scale < 1)
-                scale = 1;
-            gameWidth = DISPLAY_WIDTH * scale;
-            gameHeight = DISPLAY_HEIGHT * scale;
-        }
-        else
-        {
-            gameHeight = outputHeight * 8 / 9;
-            gameWidth = gameHeight * 3 / 2;
-        }
-        {
-            SDL_Rect gameViewport = {(outputWidth - gameWidth) / 2, (outputHeight - gameHeight) / 2,
-                                     gameWidth, gameHeight};
-            SDL_RenderCopy(sdlRenderer, sdlTexture, NULL, &gameViewport);
-            if (Platform_GetSetting(PLATFORM_SETTING_BORDER) && sBorderTexture != NULL)
-            {
-                SDL_Rect borderSource = {141, 18, 1000, 683};
-                int innerWidth = gameViewport.w - 2;
-                int innerHeight = gameViewport.h - 2;
-                SDL_Rect borderViewport = {
-                    gameViewport.x + 1 - innerWidth * 19 / 961,
-                    gameViewport.y + 1 - innerHeight * 20 / 643,
-                    innerWidth * 1000 / 961,
-                    innerHeight * 683 / 643
-                };
-                SDL_RenderCopy(sdlRenderer, sBorderTexture, &borderSource, &borderViewport);
-            }
-        }
+        SDL_Rect gameViewport;
+        GetGameViewport(DISPLAY_WIDTH, DISPLAY_HEIGHT, &gameViewport);
+        SDL_RenderCopy(sdlRenderer, sdlTexture, NULL, &gameViewport);
     }
 #else
     SDL_RenderCopy(sdlRenderer, sdlTexture, NULL, NULL);
@@ -132,57 +119,7 @@ bool32 Platform_VideoInit(void)
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "0");
 
 #if defined(NATIVE_LINUX) || defined(_WIN32)
-    for (int i = 1; i < 15; i++)
-    {
-        char filename[16];
-        char path[1024];
-        snprintf(filename, sizeof(filename), "BG%d.png", i);
-        if (!Platform_AssetGetPath(filename, path, sizeof(path)))
-            break;
-        sBorderBackgroundCount++;
-    }
-#endif
-    if (Platform_ConfigGetBackgroundOrderVersion() < 2)
-    {
-        if (Platform_ConfigHasBorderBackground())
-        {
-            u8 selection = Platform_ConfigGetBorderBackground();
-            if (selection == 1)
-                selection = sBorderBackgroundCount;
-            else if (selection >= 2)
-                selection--;
-            Platform_ConfigSetBorderBackground(selection);
-        }
-        Platform_ConfigSetBackgroundOrderVersion(2);
-        Platform_ConfigStore();
-    }
-
-#if defined(NATIVE_LINUX) || defined(_WIN32)
     SDL_RenderSetLogicalSize(sdlRenderer, 0, 0);
-    if ((IMG_Init(IMG_INIT_PNG) & IMG_INIT_PNG) == 0)
-    {
-        SDL_Log("SDL_image could not initialize: %s", IMG_GetError());
-    }
-    else
-    {
-        for (int i = 0; i < sBorderBackgroundCount; i++)
-        {
-            char filename[16];
-            char path[1024];
-            snprintf(filename, sizeof(filename), i == 0 ? "BG.png" : "BG%d.png", i);
-            if (Platform_AssetGetPath(filename, path, sizeof(path)))
-                sBackgroundTextures[i] = IMG_LoadTexture(sdlRenderer, path);
-        }
-        {
-            char path[1024];
-            if (Platform_AssetGetPath("Border.png", path, sizeof(path)))
-                sBorderTexture = IMG_LoadTexture(sdlRenderer, path);
-        }
-        if (sBackgroundTextures[0] == NULL)
-            SDL_Log("Background image could not be loaded: %s", IMG_GetError());
-        if (sBorderTexture == NULL)
-            SDL_Log("Border image could not be loaded: %s", IMG_GetError());
-    }
 #else
     SDL_RenderSetLogicalSize(sdlRenderer, DISPLAY_WIDTH, DISPLAY_HEIGHT);
     SDL_RenderSetIntegerScale(sdlRenderer, SDL_TRUE);
@@ -217,46 +154,10 @@ void Platform_VideoDrawFrame(void)
     SDL_UpdateTexture(sdlTexture, NULL, sFramebuffer, DISPLAY_WIDTH * sizeof(Uint32));
     SDL_RenderClear(sdlRenderer);
 #if defined(NATIVE_LINUX) || defined(_WIN32)
-    u8 backgroundOption = Platform_GetBorderBackground();
-    if (backgroundOption < sBorderBackgroundCount && sBackgroundTextures[backgroundOption] != NULL)
-        SDL_RenderCopy(sdlRenderer, sBackgroundTextures[backgroundOption], NULL, NULL);
     {
-        int outputWidth;
-        int outputHeight;
-        int gameHeight;
-        int gameWidth;
-        SDL_GetRendererOutputSize(sdlRenderer, &outputWidth, &outputHeight);
-        if (Platform_GetSetting(PLATFORM_SETTING_INTEGER_SCALE))
-        {
-            int scale = outputWidth / DISPLAY_WIDTH;
-            if (outputHeight / DISPLAY_HEIGHT < scale)
-                scale = outputHeight / DISPLAY_HEIGHT;
-            if (scale < 1)
-                scale = 1;
-            gameWidth = DISPLAY_WIDTH * scale;
-            gameHeight = DISPLAY_HEIGHT * scale;
-        }
-        else
-        {
-            gameHeight = outputHeight * 8 / 9;
-            gameWidth = gameHeight * 3 / 2;
-        }
-        SDL_Rect gameViewport = {(outputWidth - gameWidth) / 2, (outputHeight - gameHeight) / 2,
-                                 gameWidth, gameHeight};
+        SDL_Rect gameViewport;
+        GetGameViewport(DISPLAY_WIDTH, DISPLAY_HEIGHT, &gameViewport);
         SDL_RenderCopy(sdlRenderer, sdlTexture, NULL, &gameViewport);
-        if (Platform_GetSetting(PLATFORM_SETTING_BORDER) && sBorderTexture != NULL)
-        {
-            SDL_Rect borderSource = {141, 18, 1000, 683};
-            int innerWidth = gameViewport.w - 2;
-            int innerHeight = gameViewport.h - 2;
-            SDL_Rect borderViewport = {
-                gameViewport.x + 1 - innerWidth * 19 / 961,
-                gameViewport.y + 1 - innerHeight * 20 / 643,
-                innerWidth * 1000 / 961,
-                innerHeight * 683 / 643
-            };
-            SDL_RenderCopy(sdlRenderer, sBorderTexture, &borderSource, &borderViewport);
-        }
     }
 #else
     SDL_RenderCopy(sdlRenderer, sdlTexture, NULL, NULL);
@@ -348,23 +249,8 @@ void Platform_VideoApplySetting(enum PlatformSetting setting, u8 value)
 #endif
 }
 
-u8 Platform_VideoGetBackgroundCount(void)
-{
-    return sBorderBackgroundCount;
-}
-
-
 void Platform_VideoShutdown(void)
 {
-#if defined(NATIVE_LINUX) || defined(_WIN32)
-    int i;
-    for (i = 0; i < sBorderBackgroundCount; i++)
-        SDL_DestroyTexture(sBackgroundTextures[i]);
-    SDL_DestroyTexture(sBorderTexture);
-#endif
-#if defined(NATIVE_LINUX) || defined(_WIN32)
-    IMG_Quit();
-#endif
     SDL_DestroyTexture(sdlTexture);
     SDL_DestroyRenderer(sdlRenderer);
     SDL_DestroyWindow(sdlWindow);

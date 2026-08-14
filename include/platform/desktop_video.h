@@ -23,7 +23,6 @@ bool32 Platform_VideoRestoreFramebuffer(const void *source, u32 size);
 void Platform_VideoBeginHostUi(void);
 void Platform_VideoEndHostUi(void);
 void Platform_VideoApplySetting(enum PlatformSetting setting, u8 value);
-u8 Platform_VideoGetBackgroundCount(void);
 void Platform_VideoShutdown(void);
 
 #endif

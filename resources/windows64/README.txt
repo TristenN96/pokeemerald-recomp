@@ -1,4 +1,4 @@
-pokeemerald-recomp v0.1.0-alpha - Windows x64
+pokeemerald-recomp v0.1.1-alpha - Windows x64
 
 Run pokeemerald-recomp.exe directly from this folder. SDL2.dll,
 SDL2_image.dll, and the images directory must remain beside the executable.
